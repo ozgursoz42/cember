@@ -1,0 +1,6 @@
+{
+  "name": "ÇEMBER",
+  "description": "Fast-paced 2D mobile arena arcade game featuring a moving circular sensor, ball deflection physics, dynamic combos, and responsive touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
