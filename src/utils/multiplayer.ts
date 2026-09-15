@@ -89,7 +89,7 @@ export interface NetworkGameStatePayload {
   hostIceWallActive?: boolean;
   guestIceWallActive?: boolean;
   toast?: { title: string; subtitle: string; color: string; icon: string } | null;
-  soundEvents?: string[];
+  soundEvent?: string;
   gameOver?: { winner: 'player' | 'opponent'; stats: GameStats } | null;
 }
 
@@ -594,7 +594,7 @@ export class MultiplayerManager {
         return;
       }
 
-      if (now - this.lastStateSent >= 20 || state.isRoundResetting || (state.soundEvents && state.soundEvents.length > 0)) {
+      if (now - this.lastStateSent >= 20 || state.isRoundResetting || state.soundEvent) {
         this.lastStateSent = now;
         this.send({ type: 'STATE', data: state });
       }
