@@ -58,6 +58,30 @@ export interface NetworkPowerUpState {
   symbol?: string;
 }
 
+export type NetworkGameEventType =
+  | 'PADDLE_HIT'
+  | 'SENSOR_HIT'
+  | 'WALL_HIT'
+  | 'GOAL'
+  | 'POWERUP_COLLECT'
+  | 'ICE_SHATTER'
+  | 'SMASH_HIT'
+  | 'ROUND_START'
+  | 'ROUND_END'
+  | 'SPECIAL_EFFECT';
+
+export interface NetworkGameEvent {
+  eventId: string;
+  serverTick: number;
+  timestamp: number;
+  type: NetworkGameEventType;
+  x: number;
+  y: number;
+  color?: string;
+  playerId?: 'host' | 'guest' | 'none';
+  data?: Record<string, any>;
+}
+
 export interface NetworkPaddleState {
   x: number;
   y: number;
@@ -74,7 +98,7 @@ export interface NetworkPaddleState {
 }
 
 export interface NetworkGameStatePayload {
-  tick?: number;
+  serverTick: number;
   t: number;
   score: GameScore;
   rally?: number;
@@ -86,6 +110,7 @@ export interface NetworkGameStatePayload {
   guestPaddle: NetworkPaddleState;
   sensors: NetworkSensorState[];
   powerUps: NetworkPowerUpState[];
+  events?: NetworkGameEvent[]; // Replicated authoritative game events
   activePowerUps?: ActivePowerUpStatus[];
   hostIceWallActive?: boolean;
   guestIceWallActive?: boolean;
@@ -96,8 +121,9 @@ export interface NetworkGameStatePayload {
 }
 
 export interface NetworkInputPayload {
-  seq?: number;
-  t: number;
+  seq: number;
+  clientTime: number;
+  inputTick?: number;
   targetX: number;
   targetY: number;
   isSmash?: boolean;
