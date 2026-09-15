@@ -202,7 +202,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     active: false,
     remainingTime: 0,
     totalTime: 15,
-    y: 14,
+    y: 68,
     height: 14,
     alpha: 0,
     hitFlash: 0,
@@ -243,16 +243,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const opponentPaddleRef = useRef<Paddle>({
     x: 180,
-    y: 80,
+    y: 85,
     prevX: 180,
-    prevY: 80,
+    prevY: 85,
     vx: 0,
     vy: 0,
     width: 84,
     baseWidth: 84,
     height: 14,
     targetX: 180,
-    targetY: 80,
+    targetY: 85,
     speed: 10,
     color: '#f43f5e',
     glowColor: '#fb7185',
@@ -364,11 +364,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     let diffBase = 280;
     let stageBonusRatio = 1.0;
     if (difficulty === 'easiest') {
-      diffBase = 240;
-      stageBonusRatio = 0.55;
+      diffBase = 220;
+      stageBonusRatio = 0.35;
     } else if (difficulty === 'easy') {
-      diffBase = 260;
-      stageBonusRatio = 0.75;
+      diffBase = 250;
+      stageBonusRatio = 0.55;
     } else if (difficulty === 'casual') {
       diffBase = 280;
       stageBonusRatio = 1.0;
@@ -759,7 +759,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           opponentGoaliePaddleRef.current = {
             id: Math.random().toString(),
             x: width / 2,
-            y: 28,
+            y: 74,
             targetX: width / 2,
             vx: 0,
             width: oppGoalieWidth,
@@ -783,7 +783,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             active: true,
             remainingTime: oppIceDuration,
             totalTime: oppIceDuration,
-            y: 14,
+            y: 68,
             height: 14,
             alpha: 1,
             hitFlash: 0,
@@ -947,9 +947,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       playerPaddleRef.current.targetY = h - 65;
 
       opponentPaddleRef.current.x = w / 2;
-      opponentPaddleRef.current.y = 65;
+      opponentPaddleRef.current.y = 85;
       opponentPaddleRef.current.targetX = w / 2;
-      opponentPaddleRef.current.targetY = 65;
+      opponentPaddleRef.current.targetY = 85;
 
       updateSensorDifficulty();
       resetBall(true);
@@ -1410,13 +1410,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             let maxAiCap = 0.35;
 
             if (difficulty === 'easiest') {
-              baseAi = 0.085;
+              baseAi = 0.075;
+              aiStageRatio = 0.35;
+              maxAiCap = 0.12;
+            } else if (difficulty === 'easy') {
+              baseAi = 0.095;
               aiStageRatio = 0.55;
               maxAiCap = 0.16;
-            } else if (difficulty === 'easy') {
-              baseAi = 0.105;
-              aiStageRatio = 0.75;
-              maxAiCap = 0.20;
             } else if (difficulty === 'casual') {
               baseAi = 0.125;
               aiStageRatio = 1.0;
@@ -1458,25 +1458,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             }
 
             // 2D Movement calculation (X and Y forward rush/retreat fully enabled)
+            // topBoundary is kept at 82 so the paddle is ALWAYS clearly visible below the top score HUD
             const oppHalfW = opponent.width / 2;
-            const topBoundary = 25;
+            const topBoundary = 82;
             const maxRushDepth = h * 0.44;
 
             if (targetBall.vy < 0) {
               // Ball heading towards opponent: line up X, rush forward to smash or intercept
               const variance = difficulty === 'easiest'
-                ? Math.sin(currentTime * 0.002) * 10
+                ? Math.sin(currentTime * 0.002) * 14
                 : difficulty === 'easy'
-                ? Math.sin(currentTime * 0.0025) * 5
+                ? Math.sin(currentTime * 0.0025) * 8
                 : 0;
               const targetX = targetBall.x + variance;
               opponent.targetX = clamp(targetX, oppHalfW + 8, w - oppHalfW - 8);
 
               // RUSH FORWARD TO SMASH! Moves forward in 2D naturally across all difficulties
-              if (targetBall.y < h * 0.40 && targetBall.y > 55) {
+              if (targetBall.y < h * 0.42 && targetBall.y > 90) {
                 opponent.targetY = clamp(targetBall.y - 12, topBoundary, maxRushDepth);
               } else {
-                opponent.targetY = lerp(opponent.targetY, 40, 0.1);
+                opponent.targetY = lerp(opponent.targetY, 85, 0.1);
               }
             } else if (targetPowerUp) {
               // Ball is going towards player: opponent moves forward in 2D to grab power-ups!
@@ -1485,7 +1486,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             } else {
               // Idle patrolling
               opponent.targetX = lerp(opponent.targetX, w / 2 + Math.cos(currentTime * 0.002) * 35, 0.08);
-              opponent.targetY = lerp(opponent.targetY, 40, 0.08);
+              opponent.targetY = lerp(opponent.targetY, 85, 0.08);
             }
 
             opponent.x = lerp(opponent.x, opponent.targetX, aiSpeedMultiplier);
@@ -3136,8 +3137,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.roundRect(opp.x - opp.width / 2, opp.y - opp.height / 2, opp.width, opp.height, oppR);
         ctx.fill();
 
+        // Crisp border outline
+        ctx.strokeStyle = isOppMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
         if (!isOppMega && opp.secondaryColor && opp.hitFlash <= 0.1) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(opp.x, opp.y - opp.height / 2);
@@ -3241,11 +3247,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(`❄️ DONDU (${Math.ceil(opp.freezeTimer)}s)`, opp.x, opp.y);
-        } else if (!isOppMega) {
-          ctx.fillStyle = '#fecdd3';
-          ctx.beginPath();
-          ctx.roundRect(opp.x - 12, opp.y - 2, 24, 4, 2);
-          ctx.fill();
         }
         ctx.restore();
       }
@@ -3330,8 +3331,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.roundRect(ply.x - ply.width / 2, ply.y - ply.height / 2, ply.width, ply.height, plyR);
         ctx.fill();
 
+        // Crisp border outline
+        ctx.strokeStyle = isMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
         if (!isMega && ply.secondaryColor && ply.hitFlash <= 0.1) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(ply.x, ply.y - ply.height / 2);
@@ -3435,11 +3441,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(`❄️ DONDUK! (${Math.ceil(ply.freezeTimer)}s)`, ply.x, ply.y);
-        } else if (!isMega) {
-          ctx.fillStyle = '#cffafe';
-          ctx.beginPath();
-          ctx.roundRect(ply.x - 12, ply.y - 2, 24, 4, 2);
-          ctx.fill();
         }
         ctx.restore();
       }

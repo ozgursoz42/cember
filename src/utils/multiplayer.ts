@@ -1,7 +1,6 @@
-// WebRTC Peer-to-Peer Real-Time Multiplayer Manager for ÇEMBER
-// Operates serverless using PeerJS WebRTC DataChannels with STUN fallbacks
+// High-Reliability Real-Time Multiplayer Manager for ÇEMBER
+// Uses dedicated server SSE relay and room signaling for 100% reliable connection
 
-import Peer, { DataConnection } from 'peerjs';
 import { CountryTeam, GameScore, GameStats, ActivePowerUpStatus } from '../types';
 
 export type MultiplayerRole = 'host' | 'guest';
@@ -73,7 +72,7 @@ export interface NetworkPaddleState {
 }
 
 export interface NetworkGameStatePayload {
-  t: number; // timestamp
+  t: number;
   score: GameScore;
   rally?: number;
   combo?: number;
@@ -100,6 +99,7 @@ export interface NetworkInputPayload {
 }
 
 export type NetMessage =
+  | { type: 'CONNECTED'; code: string }
   | { type: 'HANDSHAKE'; profile: PlayerProfile; targetScore?: number }
   | { type: 'HANDSHAKE_ACK'; profile: PlayerProfile; targetScore?: number }
   | { type: 'LOBBY_READY'; isReady: boolean }
@@ -112,20 +112,8 @@ export type NetMessage =
   | { type: 'REMATCH_ACCEPT' }
   | { type: 'LEAVE' };
 
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.services.mozilla.com' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
-];
-
 export class MultiplayerManager {
-  private peer: Peer | null = null;
-  private conn: DataConnection | null = null;
+  private eventSource: EventSource | null = null;
   public role: MultiplayerRole | null = null;
   public roomCode: string = '';
   public status: ConnectionStatus = 'idle';
@@ -137,8 +125,8 @@ export class MultiplayerManager {
   public targetScore: number = 5;
 
   private pingInterval: number | null = null;
-  private handshakeInterval: number | null = null;
-  private connectionTimeout: number | null = null;
+  private lastStateSent: number = 0;
+  private lastInputSent: number = 0;
 
   private listeners: Set<(status: ConnectionStatus, data?: unknown) => void> = new Set();
   private stateListeners: Set<(state: NetworkGameStatePayload) => void> = new Set();
@@ -150,19 +138,35 @@ export class MultiplayerManager {
 
   public setMyProfile(profile: Partial<PlayerProfile>) {
     this.myProfile = { ...this.myProfile, ...profile };
-    if (this.conn && this.conn.open) {
-      this.send({ type: 'HANDSHAKE', profile: this.myProfile, targetScore: this.targetScore });
+    if (this.roomCode && this.status !== 'idle') {
+      this.updateRoomData();
     }
   }
 
   public setTargetScore(target: number) {
     this.targetScore = target;
-    if (this.conn && this.conn.open) {
-      this.send({ type: 'HANDSHAKE', profile: this.myProfile, targetScore: this.targetScore });
+    if (this.roomCode && this.status !== 'idle') {
+      this.updateRoomData();
     }
   }
 
-  // Create a 6-digit unique Room Code
+  private async updateRoomData() {
+    try {
+      await fetch('/api/multiplayer/room/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: this.roomCode,
+          role: this.role,
+          profile: this.myProfile,
+          targetScore: this.targetScore,
+        }),
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   public static generateRoomCode(): string {
     const chars = '0123456789';
     let code = '';
@@ -173,213 +177,142 @@ export class MultiplayerManager {
   }
 
   public static normalizeRoomCode(code: string): string {
-    return code.trim().replace(/[^0-9]/g, '').slice(0, 6);
+    return String(code || '').trim().replace(/[^0-9]/g, '').slice(0, 6);
   }
 
-  private getPeerId(roomCode: string): string {
-    const cleaned = MultiplayerManager.normalizeRoomCode(roomCode);
-    return `cember-v2-room-${cleaned}`;
-  }
-
-  // Host: Create room and listen for incoming connection
-  public createRoom(roomCode: string, targetScore: number = 5): Promise<string> {
+  // Host: Create room on server and listen via SSE
+  public async createRoom(roomCode: string, targetScore: number = 5): Promise<string> {
     this.cleanup();
     this.role = 'host';
-    this.roomCode = MultiplayerManager.normalizeRoomCode(roomCode);
+    const cleanCode = MultiplayerManager.normalizeRoomCode(roomCode);
+    this.roomCode = cleanCode;
     this.targetScore = targetScore;
     this.setStatus('initializing');
     this.errorMessage = '';
 
-    return new Promise((resolve, reject) => {
-      const peerId = this.getPeerId(this.roomCode);
+    try {
+      const resp = await fetch('/api/multiplayer/room/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: cleanCode,
+          profile: this.myProfile,
+          targetScore,
+        }),
+      });
 
-      try {
-        const peer = new Peer(peerId, {
-          debug: 1,
-          config: {
-            iceServers: ICE_SERVERS,
-          },
-        });
-
-        this.peer = peer;
-
-        peer.on('open', () => {
-          this.setStatus('waiting_for_peer');
-          resolve(this.roomCode);
-        });
-
-        peer.on('connection', (incomingConn) => {
-          // Accept the incoming guest player
-          this.conn = incomingConn;
-          this.setupConnectionHandlers(incomingConn);
-        });
-
-        peer.on('error', (err: { type?: string; message?: string }) => {
-          console.error('Peer host error:', err);
-          if (err.type === 'unavailable-id') {
-            this.errorMessage = 'Bu oda kodu şu an meşgul. Lütfen yeni kod üretin.';
-          } else {
-            this.errorMessage = `Bağlantı hatası: ${err.message || err.type || 'Bilinmeyen hata'}`;
-          }
-          this.setStatus('error');
-          reject(err);
-        });
-      } catch (e) {
-        console.error('Peer initialization exception:', e);
-        this.errorMessage = 'WebRTC başlatılamadı. Tarayıcınızı kontrol edin.';
+      const data = await resp.json();
+      if (!data.success) {
+        this.errorMessage = data.error || 'Oda oluşturulamadı.';
         this.setStatus('error');
-        reject(e);
+        throw new Error(this.errorMessage);
       }
-    });
+
+      this.setupSSE(cleanCode, 'host');
+      this.setStatus('waiting_for_peer');
+      return cleanCode;
+    } catch (err: any) {
+      console.error('Failed to create room:', err);
+      this.errorMessage = err.message || 'Sunucu bağlantı hatası.';
+      this.setStatus('error');
+      throw err;
+    }
   }
 
   // Guest: Join room with 6-digit code
-  public joinRoom(roomCode: string): Promise<void> {
+  public async joinRoom(roomCode: string): Promise<void> {
     this.cleanup();
     this.role = 'guest';
-    const cleanedCode = MultiplayerManager.normalizeRoomCode(roomCode);
-    this.roomCode = cleanedCode;
+    const cleanCode = MultiplayerManager.normalizeRoomCode(roomCode);
+    this.roomCode = cleanCode;
     this.setStatus('initializing');
     this.errorMessage = '';
 
-    return new Promise((resolve, reject) => {
-      // Guest creates random peer ID
-      const guestPeerId = `cember-guest-${Math.random().toString(36).substring(2, 10)}`;
-
-      try {
-        const peer = new Peer(guestPeerId, {
-          debug: 1,
-          config: {
-            iceServers: ICE_SERVERS,
-          },
-        });
-
-        this.peer = peer;
-
-        // Set a 12-second safety timeout for joining
-        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
-        this.connectionTimeout = window.setTimeout(() => {
-          if (this.status !== 'connected') {
-            this.errorMessage = 'Odaya bağlanılamadı. Kurucunun "Oda Kur" ekranında beklediğinden emin olun.';
-            this.setStatus('error');
-            reject(new Error('Connection timed out'));
-          }
-        }, 12000);
-
-        peer.on('open', () => {
-          this.setStatus('connecting');
-          const hostPeerId = this.getPeerId(cleanedCode);
-
-          // Connect using reliable WebRTC connection to ensure delivery
-          const connection = peer.connect(hostPeerId, {
-            reliable: true,
-          });
-
-          this.conn = connection;
-          this.setupConnectionHandlers(connection);
-          resolve();
-        });
-
-        peer.on('error', (err: { type?: string; message?: string }) => {
-          console.error('Peer guest error:', err);
-          if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
-          if (err.type === 'peer-unavailable') {
-            this.errorMessage = 'Oda bulunamadı! Lütfen oda kodunu kontrol edin veya kurucunun odayı açtığından emin olun.';
-          } else {
-            this.errorMessage = `Bağlantı hatası: ${err.message || err.type || 'Bilinmeyen hata'}`;
-          }
-          this.setStatus('error');
-          reject(err);
-        });
-      } catch (e) {
-        console.error('Peer join exception:', e);
-        this.errorMessage = 'WebRTC başlatılamadı.';
-        this.setStatus('error');
-        reject(e);
-      }
-    });
-  }
-
-  private setupConnectionHandlers(connection: DataConnection) {
-    const handleOpen = () => {
-      if (this.connectionTimeout) {
-        clearTimeout(this.connectionTimeout);
-        this.connectionTimeout = null;
-      }
-      this.setStatus('connected');
-
-      // Send initial handshake immediately
-      this.send({
-        type: 'HANDSHAKE',
-        profile: this.myProfile,
-        targetScore: this.targetScore,
+    try {
+      const resp = await fetch('/api/multiplayer/room/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: cleanCode,
+          profile: this.myProfile,
+        }),
       });
 
-      // Continuous handshake resend every 500ms until opponent handshake is established
-      if (this.handshakeInterval) clearInterval(this.handshakeInterval);
-      this.handshakeInterval = window.setInterval(() => {
-        if (!this.opponentProfile && this.conn && this.conn.open) {
-          this.send({
-            type: 'HANDSHAKE',
-            profile: this.myProfile,
-            targetScore: this.targetScore,
-          });
-        } else if (this.opponentProfile) {
-          if (this.handshakeInterval) {
-            clearInterval(this.handshakeInterval);
-            this.handshakeInterval = null;
-          }
-        }
-      }, 500);
+      const data = await resp.json();
+      if (!data.success) {
+        this.errorMessage = data.error || 'Odaya bağlanılamadı. Kodu kontrol edin.';
+        this.setStatus('error');
+        throw new Error(this.errorMessage);
+      }
 
-      // Start ping loop
+      if (data.hostProfile) {
+        this.opponentProfile = data.hostProfile;
+      }
+      if (data.targetScore) {
+        this.targetScore = data.targetScore;
+      }
+
+      this.setupSSE(cleanCode, 'guest');
+      this.setStatus('connected');
+      if (this.opponentProfile) {
+        this.notify('handshake_received', this.opponentProfile);
+      }
+    } catch (err: any) {
+      console.error('Failed to join room:', err);
+      this.errorMessage = err.message || 'Odaya bağlanılamadı.';
+      this.setStatus('error');
+      throw err;
+    }
+  }
+
+  private setupSSE(code: string, role: MultiplayerRole) {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+
+    const sseUrl = `/api/multiplayer/room/${code}/events?role=${role}`;
+    const es = new EventSource(sseUrl);
+    this.eventSource = es;
+
+    es.onopen = () => {
+      if (role === 'guest' || (role === 'host' && this.opponentProfile)) {
+        this.setStatus('connected');
+      }
       this.startPingLoop();
     };
 
-    if (connection.open) {
-      handleOpen();
-    } else {
-      connection.on('open', handleOpen);
-    }
+    es.onmessage = (event) => {
+      try {
+        if (!event.data || event.data.trim() === '') return;
+        const msg = JSON.parse(event.data) as NetMessage;
+        this.handleIncomingMessage(msg);
+      } catch (err) {
+        console.warn('SSE parse error:', err);
+      }
+    };
 
-    connection.on('data', (raw: unknown) => {
-      this.handleIncomingMessage(raw as NetMessage);
-    });
-
-    connection.on('close', () => {
-      this.setStatus('disconnected');
-    });
-
-    connection.on('error', (err) => {
-      console.warn('DataConnection error:', err);
-      this.setStatus('error');
-    });
+    es.onerror = () => {
+      // Reconnect handled automatically by EventSource, but update status if needed
+      console.warn('SSE connection warning/reconnecting...');
+    };
   }
 
   private handleIncomingMessage(msg: NetMessage) {
     if (!msg || !msg.type) return;
 
     switch (msg.type) {
-      case 'HANDSHAKE': {
-        this.opponentProfile = msg.profile;
-        if (msg.targetScore && this.role === 'guest') {
-          this.targetScore = msg.targetScore;
-        }
-        // Send ACK and our profile back
-        this.send({
-          type: 'HANDSHAKE_ACK',
-          profile: this.myProfile,
-          targetScore: this.targetScore,
-        });
-        this.notify('handshake_received', msg.profile);
+      case 'CONNECTED': {
         break;
       }
 
+      case 'HANDSHAKE':
       case 'HANDSHAKE_ACK': {
         this.opponentProfile = msg.profile;
         if (msg.targetScore && this.role === 'guest') {
           this.targetScore = msg.targetScore;
         }
+        this.setStatus('connected');
         this.notify('handshake_received', msg.profile);
         break;
       }
@@ -441,42 +374,48 @@ export class MultiplayerManager {
   }
 
   public send(msg: NetMessage) {
-    if (this.conn && this.conn.open) {
-      try {
-        this.conn.send(msg);
-      } catch (err) {
-        console.warn('Send message failed:', err);
+    if (!this.roomCode) return;
+    fetch(`/api/multiplayer/room/${this.roomCode}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: this.role,
+        message: msg,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  // Fast broadcast game state (Host -> Guest) with throttling (max 40 fps)
+  public sendGameState(state: NetworkGameStatePayload) {
+    if (this.role === 'host') {
+      const now = performance.now();
+      if (now - this.lastStateSent >= 20 || state.isRoundResetting || state.soundEvent || state.gameOver) {
+        this.lastStateSent = now;
+        this.send({ type: 'STATE', data: state });
       }
     }
   }
 
-  // Fast broadcast game state (Host -> Guest)
-  public sendGameState(state: NetworkGameStatePayload) {
-    if (this.role === 'host') {
-      this.send({ type: 'STATE', data: state });
-    }
-  }
-
-  // Fast broadcast paddle input (Guest -> Host)
+  // Fast broadcast paddle input (Guest -> Host) with throttling (max 40 fps)
   public sendInput(input: NetworkInputPayload) {
     if (this.role === 'guest') {
-      this.send({ type: 'INPUT', data: input });
+      const now = performance.now();
+      if (now - this.lastInputSent >= 20 || input.isSmash) {
+        this.lastInputSent = now;
+        this.send({ type: 'INPUT', data: input });
+      }
     }
   }
 
   public startGame() {
     if (this.role === 'host') {
       this.send({ type: 'START_GAME', targetScore: this.targetScore });
-      // Send a second packet to ensure delivery
-      setTimeout(() => {
-        this.send({ type: 'START_GAME', targetScore: this.targetScore });
-      }, 80);
       this.notify('game_started');
       this.notify('match_start');
     }
   }
 
-  // Aliases for seamless compatibility
   public startMatch() {
     this.startGame();
   }
@@ -493,10 +432,10 @@ export class MultiplayerManager {
   private startPingLoop() {
     if (this.pingInterval) clearInterval(this.pingInterval);
     this.pingInterval = window.setInterval(() => {
-      if (this.conn && this.conn.open) {
+      if (this.roomCode && this.status === 'connected') {
         this.send({ type: 'PING', sentAt: Date.now() });
       }
-    }, 2000);
+    }, 2500);
   }
 
   private setStatus(status: ConnectionStatus) {
@@ -525,41 +464,27 @@ export class MultiplayerManager {
   }
 
   public cleanup() {
-    if (this.connectionTimeout) {
-      clearTimeout(this.connectionTimeout);
-      this.connectionTimeout = null;
-    }
-    if (this.handshakeInterval) {
-      clearInterval(this.handshakeInterval);
-      this.handshakeInterval = null;
-    }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
-    if (this.conn) {
-      try {
-        this.send({ type: 'LEAVE' });
-        this.conn.close();
-      } catch {
-        // ignore
-      }
-      this.conn = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {
-        // ignore
-      }
-      this.peer = null;
+    if (this.roomCode && this.role) {
+      fetch(`/api/multiplayer/room/${this.roomCode}/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: this.role }),
+        keepalive: true,
+      }).catch(() => {});
     }
     this.role = null;
     this.opponentProfile = null;
     this.status = 'idle';
   }
 
-  // Alias for safety
   public destroy() {
     this.cleanup();
   }
