@@ -18,6 +18,7 @@ import {
 import { GameScore, ActivePowerUpStatus, CountryTeam, CardPenaltyState } from '../types';
 import { isFullscreen, toggleFullscreen } from '../utils/fullscreen';
 import { gyroController, GyroState } from '../utils/gyroscope';
+import { CountryFlag } from './CountryFlag';
 import { soundEngine } from '../utils/audio';
 
 interface GameHUDProps {
@@ -142,9 +143,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             {/* Opponent side indicator */}
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-xl shrink-0 drop-shadow-sm">
-                {opponentTeam ? opponentTeam.flag : isMultiplayer ? '👤' : '🤖'}
-              </span>
+              {opponentTeam ? (
+                <CountryFlag team={opponentTeam} size="sm" shape="rounded" className="shrink-0 drop-shadow-sm" />
+              ) : (
+                <span className="text-lg shrink-0 drop-shadow-sm">{isMultiplayer ? '👤' : '🤖'}</span>
+              )}
               <div className="flex flex-col items-start leading-none max-w-[75px] truncate">
                 <div className="flex items-center gap-1">
                   <span
@@ -217,9 +220,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   </span>
                 ) : null}
               </div>
-              <span className="text-xl shrink-0 drop-shadow-sm">
-                {playerTeam ? playerTeam.flag : '👤'}
-              </span>
+              {playerTeam ? (
+                <CountryFlag team={playerTeam} size="sm" shape="rounded" className="shrink-0 drop-shadow-sm" />
+              ) : (
+                <span className="text-lg shrink-0 drop-shadow-sm">👤</span>
+              )}
             </div>
           </div>
 

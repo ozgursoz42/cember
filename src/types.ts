@@ -17,6 +17,7 @@ export interface CountryTeam {
   name: string;
   flag: string;
   code: string;
+  flagCode?: string;
   paddleColor: string;
   secondaryColor?: string;
   glowColor: string;

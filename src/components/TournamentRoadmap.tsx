@@ -9,6 +9,7 @@ import {
   resetTournamentProgress,
 } from '../data/tournamentData';
 import { soundEngine } from '../utils/audio';
+import { CountryFlag } from './CountryFlag';
 
 interface TournamentRoadmapProps {
   playerTeam: CountryTeam;
@@ -129,7 +130,8 @@ export const TournamentRoadmap: React.FC<TournamentRoadmapProps> = ({
             40 MAÇLIK ŞAMPİYONLUK
           </span>
           <h2 className="text-sm font-black text-white flex items-center gap-1.5">
-            <span>{playerTeam.flag} {playerTeam.name}</span>
+            <CountryFlag team={playerTeam} size="sm" shape="rounded" />
+            <span>{playerTeam.name}</span>
           </h2>
         </div>
 
@@ -145,8 +147,8 @@ export const TournamentRoadmap: React.FC<TournamentRoadmapProps> = ({
       {/* Progress & Current Match Hero Header */}
       <div className="w-full my-2 p-3 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-800 shadow-xl flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="text-2xl p-2 rounded-xl bg-slate-950/80 border border-slate-800 shadow-inner">
-            {playerTeam.flag}
+          <div className="p-1 rounded-xl bg-slate-950/80 border border-slate-800 shadow-inner flex items-center justify-center">
+            <CountryFlag team={playerTeam} size="lg" shape="rounded" />
           </div>
           <div>
             <div className="text-xs font-bold text-white flex items-center gap-2">
@@ -205,8 +207,8 @@ export const TournamentRoadmap: React.FC<TournamentRoadmapProps> = ({
                   {isCompleted ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : match.matchNumber}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">{match.opponentTeam.flag}</span>
+                <div className="flex items-center gap-2.5">
+                  <CountryFlag team={match.opponentTeam} size="md" shape="rounded" />
                   <div>
                     <div className="text-xs font-bold text-white flex items-center gap-1.5">
                       <span>vs {match.opponentTeam.name}</span>

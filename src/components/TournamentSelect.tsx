@@ -3,6 +3,7 @@ import { ArrowLeft, Play, Search, Shield, Trophy, Check, Sparkles } from 'lucide
 import { CountryTeam } from '../types';
 import { TOURNAMENT_COUNTRIES } from '../data/tournamentData';
 import { soundEngine } from '../utils/audio';
+import { CountryFlag } from './CountryFlag';
 
 interface TournamentSelectProps {
   onSelectTeam: (team: CountryTeam) => void;
@@ -96,8 +97,8 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
       {/* Selected Country Hero Preview */}
       <div className="w-full my-2 p-3 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/90 to-slate-900 border border-slate-800 shadow-xl flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="relative w-12 h-12 rounded-2xl bg-slate-950/80 border border-slate-700 flex items-center justify-center text-3xl shadow-inner">
-            {selectedTeam.flag}
+          <div className="relative w-12 h-12 rounded-2xl bg-slate-950/80 border border-slate-700 flex items-center justify-center p-1.5 shadow-inner">
+            <CountryFlag team={selectedTeam} size="lg" shape="rounded" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
@@ -174,8 +175,8 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
                     : 'bg-slate-900/70 border-slate-800/80 hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-center gap-2 overflow-hidden text-left">
-                  <span className="text-xl shrink-0">{team.flag}</span>
+                <div className="flex items-center gap-2.5 overflow-hidden text-left">
+                  <CountryFlag team={team} size="md" shape="rounded" />
                   <div className="truncate">
                     <div className="text-xs font-bold text-white truncate flex items-center gap-1">
                       {team.name}
