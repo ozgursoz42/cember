@@ -271,8 +271,11 @@ export function checkBallPaddleCollision(
     const startX = ball.prevX ?? ball.x;
     const startY = ball.prevY ?? ball.y;
 
-    // Check swept continuous collision
-    const sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.x, paddle.y, paddle.width, paddle.height);
+    // Check swept continuous collision against paddle at current position
+    let sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.x, paddle.y, paddle.width, paddle.height);
+    if (!sweep && paddle.prevX !== undefined && paddle.prevY !== undefined) {
+      sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.prevX, paddle.prevY, paddle.width, paddle.height);
+    }
 
     // Also check current direct overlap
     const paddleTop = paddle.y - halfH;
@@ -287,9 +290,11 @@ export function checkBallPaddleCollision(
       // Set hit position
       const hitX = sweep ? sweep.hitX : ball.x;
 
-      // Strictly position ball in front (above) player paddle + 2px epsilon
+      // Strictly position ball in front (above) player paddle + 2.5px epsilon
       ball.x = hitX;
       ball.y = paddleTop - ball.radius - 2.5;
+      ball.prevX = ball.x;
+      ball.prevY = ball.y;
 
       // Contact offset across paddle width (-1 to 1) for directional steering
       const hitOffset = clamp((hitX - paddle.x) / halfW, -0.92, 0.92);
@@ -341,7 +346,11 @@ export function checkBallPaddleCollision(
     const startX = ball.prevX ?? ball.x;
     const startY = ball.prevY ?? ball.y;
 
-    const sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.x, paddle.y, paddle.width, paddle.height);
+    // Check swept continuous collision against paddle at current position
+    let sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.x, paddle.y, paddle.width, paddle.height);
+    if (!sweep && paddle.prevX !== undefined && paddle.prevY !== undefined) {
+      sweep = sweepCircleVsBox(startX, startY, ball.x, ball.y, ball.radius, paddle.prevX, paddle.prevY, paddle.width, paddle.height);
+    }
 
     const paddleTop = paddle.y - halfH;
     const paddleBottom = paddle.y + halfH;
@@ -354,9 +363,11 @@ export function checkBallPaddleCollision(
     if (sweep || isDirectOverlap) {
       const hitX = sweep ? sweep.hitX : ball.x;
 
-      // Strictly position ball in front (below) opponent paddle + 2px epsilon
+      // Strictly position ball in front (below) opponent paddle + 2.5px epsilon
       ball.x = hitX;
       ball.y = paddleBottom + ball.radius + 2.5;
+      ball.prevX = ball.x;
+      ball.prevY = ball.y;
 
       const hitOffset = clamp((hitX - paddle.x) / halfW, -0.92, 0.92);
       const maxAngle = (58 * Math.PI) / 180;

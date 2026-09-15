@@ -399,32 +399,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       switch (evt.type) {
         case 'PADDLE_HIT': {
           soundEngine.playPaddleHit(true);
-          spawnHitParticles(renderX, renderY, color, 16, 1.5);
-          spawnShockwave(renderX, renderY, color, 65);
+          spawnShockwave(renderX, renderY, color, 45);
           break;
         }
         case 'SENSOR_HIT': {
           soundEngine.playSensorHit();
-          spawnHitParticles(renderX, renderY, color, 22, 1.8);
+          spawnHitParticles(renderX, renderY, color, 14, 1.4);
           spawnShockwave(renderX, renderY, color, 85);
           break;
         }
         case 'WALL_HIT': {
           soundEngine.playWallBounce();
-          spawnHitParticles(renderX, renderY, '#94a3b8', 6, 0.8);
           break;
         }
         case 'GOAL': {
           soundEngine.playScore(true);
-          spawnHitParticles(renderX, renderY, color, 35, 2.4);
           spawnShockwave(renderX, renderY, color, 120);
           triggerGoalSparkles(renderX, renderY);
           break;
         }
         case 'SMASH_HIT': {
           soundEngine.playSmashHit();
-          spawnHitParticles(renderX, renderY, color, 25, 2.2);
-          spawnShockwave(renderX, renderY, color, 95);
+          spawnShockwave(renderX, renderY, color, 70);
           break;
         }
         case 'POWERUP_COLLECT': {
@@ -1401,19 +1397,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       handlePointerMove(e);
 
       // On tap/strike, if moving or tapping forward close to the ball, apply forward strike boost
-      const ball = ballRef.current;
       const paddle = playerPaddleRef.current;
       if (paddle.isFrozen || paddle.isEjected) return;
 
-      const dist = Math.hypot(ball.x - paddle.x, ball.y - paddle.y);
-      if (dist < 70 && ball.vy > 0) {
-        ball.vy = -Math.abs(ball.vy) * 1.15;
-        ball.speed = Math.min(ball.speed * 1.15, ball.maxSpeed);
-        soundEngine.playSmashHit();
-        spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
-        spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
-
-        if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
+      if (isMultiplayer && multiplayerRole === 'guest') {
+        if (multiplayerManager) {
           const w = gameStateRef.current.width;
           const h = gameStateRef.current.height;
           multiplayerManager.sendInput({
@@ -1423,6 +1411,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             isSmash: true,
           });
         }
+        return;
+      }
+
+      const ball = ballRef.current;
+      const dist = Math.hypot(ball.x - paddle.x, ball.y - paddle.y);
+      if (dist < 70 && ball.vy > 0) {
+        ball.vy = -Math.abs(ball.vy) * 1.15;
+        ball.speed = Math.min(ball.speed * 1.15, ball.maxSpeed);
+        soundEngine.playSmashHit();
+        spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
+        spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
       }
     };
 
@@ -1441,6 +1440,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     if (multiplayerRole === 'host') {
       const unsub = multiplayerManager.onInput((input: NetworkInputPayload) => {
+        if (input.seq !== undefined) {
+          if (input.seq <= lastReceivedGuestSeqRef.current) {
+            return; // Discard stale or out-of-order guest input
+          }
+          lastReceivedGuestSeqRef.current = input.seq;
+        }
+
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
         const opp = opponentPaddleRef.current;
@@ -1456,9 +1462,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             b.vy = Math.abs(b.vy) * 1.15;
             b.speed = Math.min(b.speed * 1.15, b.maxSpeed);
             b.isSmash = true;
-            soundEngine.playSmashHit();
-            spawnHitParticles(b.x, b.y, '#f43f5e', 16, 1.5);
-            spawnShockwave(b.x, b.y, '#f43f5e', 60);
+            emitAuthoritativeGameEvent(
+              'SMASH_HIT',
+              b.x / w,
+              b.y / h,
+              opp.glowColor || '#f43f5e',
+              'guest'
+            );
           }
         }
       });
@@ -1730,6 +1740,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             } else if (b.x + b.radius > w) {
               b.x = w - b.radius;
               b.vx = -Math.abs(b.vx);
+            }
+
+            // Prevent ball from sinking into guest paddle while waiting for authoritative bounce
+            const halfW = player.width / 2;
+            const paddleTop = player.y - player.height / 2;
+            if (b.vy > 0 && b.y + b.radius >= paddleTop && b.y - b.radius <= player.y + player.height / 2) {
+              if (b.x >= player.x - halfW - b.radius && b.x <= player.x + halfW + b.radius) {
+                b.y = Math.min(b.y, paddleTop - b.radius);
+              }
             }
           }
         }
@@ -2386,22 +2405,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
                   const isHardStrike = playerHit.isSmash || player.isRocketPowered || player.vy < -60 || currentBall.speed >= 620;
 
-                  if (player.isRocketPowered) {
-                    triggerSoundEvent('rocket');
-                    spawnHitParticles(currentBall.x, currentBall.y, '#06b6d4', 28, 2.4, 'flame');
-                    spawnShockwave(player.x, player.y, '#06b6d4', 75);
-                    state.screenShake = 10;
-                  } else if (playerHit.isSmash) {
-                    triggerSoundEvent('smash_hit');
-                    spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 24, 2.2);
-                    spawnShockwave(player.x, player.y, '#38bdf8', 70);
-                    state.screenShake = 8;
+                  if (isMultiplayer && multiplayerRole === 'host') {
+                    emitAuthoritativeGameEvent(
+                      playerHit.isSmash ? 'SMASH_HIT' : 'PADDLE_HIT',
+                      currentBall.x / w,
+                      currentBall.y / h,
+                      player.glowColor || '#22d3ee',
+                      'host'
+                    );
+                    state.screenShake = playerHit.isSmash ? 8 : 4;
                   } else {
-                    triggerSoundEvent('paddle_hit_player', state.comboCount);
-                    soundEngine.playCombo(state.comboCount);
-                    spawnHitParticles(currentBall.x, currentBall.y, '#22d3ee', 12, 1.2);
-                    spawnShockwave(player.x, player.y, '#22d3ee', 45);
-                    state.screenShake = 4;
+                    if (player.isRocketPowered) {
+                      triggerSoundEvent('rocket');
+                      spawnHitParticles(currentBall.x, currentBall.y, '#06b6d4', 28, 2.4, 'flame');
+                      spawnShockwave(player.x, player.y, '#06b6d4', 75);
+                      state.screenShake = 10;
+                    } else if (playerHit.isSmash) {
+                      triggerSoundEvent('smash_hit');
+                      spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 24, 2.2);
+                      spawnShockwave(player.x, player.y, '#38bdf8', 70);
+                      state.screenShake = 8;
+                    } else {
+                      triggerSoundEvent('paddle_hit_player', state.comboCount);
+                      soundEngine.playCombo(state.comboCount);
+                      spawnHitParticles(currentBall.x, currentBall.y, '#22d3ee', 12, 1.2);
+                      spawnShockwave(player.x, player.y, '#22d3ee', 45);
+                      state.screenShake = 4;
+                    }
                   }
 
                   // Card penalty rules: ONLY active in Tournament Mode
@@ -2508,29 +2538,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
                   const isOppHardStrike = oppHit.isSmash || opponent.isRocketPowered || opponent.vy > 60 || currentBall.speed >= 620;
 
-                  emitAuthoritativeGameEvent(
-                    oppHit.isSmash ? 'SMASH_HIT' : 'PADDLE_HIT',
-                    currentBall.x / w,
-                    currentBall.y / h,
-                    opponent.glowColor || '#f43f5e',
-                    'guest'
-                  );
-
-                  if (opponent.isRocketPowered) {
-                    triggerSoundEvent('rocket');
-                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 28, 2.4, 'flame');
-                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 75);
-                    state.screenShake = 10;
-                  } else if (oppHit.isSmash) {
-                    triggerSoundEvent('smash_hit');
-                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 24, 2.2);
-                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 70);
-                    state.screenShake = 8;
+                  if (isMultiplayer && multiplayerRole === 'host') {
+                    emitAuthoritativeGameEvent(
+                      oppHit.isSmash ? 'SMASH_HIT' : 'PADDLE_HIT',
+                      currentBall.x / w,
+                      currentBall.y / h,
+                      opponent.glowColor || '#f43f5e',
+                      'guest'
+                    );
+                    state.screenShake = oppHit.isSmash ? 8 : 4;
                   } else {
-                    triggerSoundEvent('paddle_hit_opp');
-                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 12, 1.2);
-                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 45);
-                    state.screenShake = 4;
+                    if (opponent.isRocketPowered) {
+                      triggerSoundEvent('rocket');
+                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 28, 2.4, 'flame');
+                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 75);
+                      state.screenShake = 10;
+                    } else if (oppHit.isSmash) {
+                      triggerSoundEvent('smash_hit');
+                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 24, 2.2);
+                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 70);
+                      state.screenShake = 8;
+                    } else {
+                      triggerSoundEvent('paddle_hit_opp');
+                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 12, 1.2);
+                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 45);
+                      state.screenShake = 4;
+                    }
                   }
 
                   if (isTournamentMode && isOppHardStrike) {
