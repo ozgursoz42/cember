@@ -24,6 +24,11 @@ interface GameOverModalProps {
   onOpenTournamentRoadmap?: () => void;
   hasNextTournamentMatch?: boolean;
   isChampion?: boolean;
+  // Multiplayer Mode props
+  isMultiplayer?: boolean;
+  multiplayerRole?: 'host' | 'guest' | null;
+  onRematch?: () => void;
+  rematchRequested?: boolean;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -46,6 +51,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onOpenTournamentRoadmap,
   hasNextTournamentMatch,
   isChampion,
+  isMultiplayer,
+  multiplayerRole,
+  onRematch,
+  rematchRequested,
 }) => {
   const isWinner = stats.winner === 'player';
 
@@ -53,7 +62,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const diff = score.player - score.opponent;
   const stars = score.opponent === 0 || diff >= 3 ? 3 : diff >= 2 ? 2 : 1;
 
-  const matchHeader = isTournamentMode
+  const matchHeader = isMultiplayer
+    ? isWinner
+      ? `🏆 ONLINE MAÇI KAZANDIN!`
+      : `ONLINE MAÇI RAKİP KAZANDI`
+    : isTournamentMode
     ? isChampion
       ? '🏆 DÜNYA ŞAMPİYONU!'
       : isWinner
@@ -239,8 +252,17 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         {/* Action Buttons */}
         <div className="w-full flex flex-col gap-2">
-          {/* Tournament Next Match Button */}
-          {isTournamentMode && isWinner && hasNextTournamentMatch && onNextTournamentMatch ? (
+          {/* Multiplayer Rematch Button */}
+          {isMultiplayer ? (
+            <button
+              id="online-rematch-btn"
+              onClick={onRematch || onPlayAgain}
+              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition hover:brightness-110"
+            >
+              <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+              <span>{rematchRequested ? 'RÖVANŞ İSTEĞİNİ KABUL ET' : 'RÖVANŞ MAÇI İSTE'}</span>
+            </button>
+          ) : isTournamentMode && isWinner && hasNextTournamentMatch && onNextTournamentMatch ? (
             <button
               id="next-tournament-match-btn"
               onClick={onNextTournamentMatch}

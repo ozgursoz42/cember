@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
-import { Play, Volume2, VolumeX, Shield, Zap, Flame, Trophy, Info, X, Map, Award, Feather, Sparkles, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Volume2, VolumeX, Shield, Zap, Flame, Trophy, Info, X, Map, Award, Feather, Sparkles, Globe, Users, Maximize2, Minimize2, Smartphone } from 'lucide-react';
 import { GameDifficulty } from '../types';
 import { DIFFICULTY_BADGES, getAdventureProgress, getUnlockedBadges, ADVENTURE_STAGES } from '../adventureData';
+import { isFullscreen, toggleFullscreen } from '../utils/fullscreen';
+import { gyroController, GyroState } from '../utils/gyroscope';
+import { soundEngine } from '../utils/audio';
 
 interface MainMenuProps {
   onStartGame: (difficulty: GameDifficulty) => void;
   onStartAdventure: () => void;
   onStartTournament: () => void;
+  onStartMultiplayer: () => void;
   difficulty: GameDifficulty;
   setDifficulty: (diff: GameDifficulty) => void;
   isMuted: boolean;
@@ -18,6 +22,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onStartGame,
   onStartAdventure,
   onStartTournament,
+  onStartMultiplayer,
   difficulty,
   setDifficulty,
   isMuted,
@@ -26,6 +31,44 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 }) => {
   const [showPowerUpGuide, setShowPowerUpGuide] = useState(false);
   const [showBadgesModal, setShowBadgesModal] = useState(false);
+  const [inFullscreen, setInFullscreen] = useState(false);
+  const [gyroState, setGyroState] = useState<GyroState>(gyroController.getState());
+  const [gyroMessage, setGyroMessage] = useState<string>('');
+
+  useEffect(() => {
+    const unsub = gyroController.subscribe(setGyroState);
+    const handleFs = () => setInFullscreen(isFullscreen());
+    document.addEventListener('fullscreenchange', handleFs);
+    document.addEventListener('webkitfullscreenchange', handleFs);
+    return () => {
+      unsub();
+      document.removeEventListener('fullscreenchange', handleFs);
+      document.removeEventListener('webkitfullscreenchange', handleFs);
+    };
+  }, []);
+
+  const handleToggleFs = async () => {
+    soundEngine.playClick();
+    const ok = await toggleFullscreen();
+    setInFullscreen(ok);
+  };
+
+  const handleToggleGyro = async () => {
+    soundEngine.playClick();
+    if (gyroState.isEnabled) {
+      gyroController.disable();
+      setGyroMessage('Jiroskop kapatıldı');
+    } else {
+      const ok = await gyroController.requestPermissionAndEnable();
+      if (ok) {
+        gyroController.calibrate();
+        setGyroMessage('📱 Jiroskop Aktif! Telefonu eğerek oynayabilirsiniz.');
+      } else {
+        setGyroMessage('Jiroskop desteklenmiyor veya izin verilmedi.');
+      }
+    }
+    setTimeout(() => setGyroMessage(''), 2500);
+  };
 
   const progress = getAdventureProgress(difficulty);
   const completedCount = progress.filter((s) => s.completed).length;
@@ -33,7 +76,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
   return (
     <div className="relative w-full h-full flex flex-col justify-between items-center p-4 max-w-md mx-auto select-none overflow-y-auto z-20">
-      {/* Top Bar: Mute, Badges, Power-ups Info & Best Record */}
+      {/* Top Bar: Mute, Gyro, Fullscreen, Badges, Power-ups Info & Best Record */}
       <div className="w-full flex items-center justify-between pt-1">
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs font-semibold text-amber-400">
           <Trophy className="w-3.5 h-3.5" />
@@ -41,6 +84,32 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Gyro quick toggle */}
+          <button
+            id="menu-gyro-btn"
+            onClick={handleToggleGyro}
+            aria-label="Jiroskop Eğim Kontrolü"
+            className={`p-2 rounded-full border transition active:scale-95 flex items-center gap-1 text-xs font-bold ${
+              gyroState.isEnabled
+                ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+            title={gyroState.isEnabled ? 'Jiroskop: Açık' : 'Jiroskop: Kapalı'}
+          >
+            <Smartphone className={`w-4 h-4 ${gyroState.isEnabled ? 'rotate-12 animate-pulse' : ''}`} />
+          </button>
+
+          {/* Fullscreen button */}
+          <button
+            id="menu-fullscreen-btn"
+            onClick={handleToggleFs}
+            aria-label="Tam Ekran"
+            className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95"
+            title="Tam Ekran Modu"
+          >
+            {inFullscreen ? <Minimize2 className="w-4 h-4 text-cyan-400" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+
           <button
             id="badges-modal-btn"
             onClick={() => setShowBadgesModal(true)}
@@ -73,6 +142,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Gyro Toast Message */}
+      {gyroMessage && (
+        <div className="w-full mt-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/60 text-cyan-300 text-xs font-bold text-center shadow-lg animate-in fade-in duration-150">
+          {gyroMessage}
+        </div>
+      )}
 
       {/* Center Hero: Animated ÇEMBER Logo & Visual Motif */}
       <div className="flex flex-col items-center justify-center my-auto py-2">
@@ -194,14 +270,37 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
         </div>
 
-        {/* PRIMARY 1: TURNUVA MODU (40 ÜLKE) */}
+        {/* PRIMARY 1: ONLINE KARŞILIKLI MOD (P2P PVP) */}
+        <button
+          id="online-multiplayer-mode-btn"
+          onClick={onStartMultiplayer}
+          className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-black text-sm tracking-wider flex items-center justify-between shadow-[0_0_22px_rgba(168,85,247,0.35)] active:scale-[0.98] transition hover:brightness-110"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-slate-950/30 flex items-center justify-center text-lg shadow-inner">
+              <Users className="w-4 h-4 text-purple-200" />
+            </div>
+            <div className="text-left">
+              <div className="text-xs font-black leading-tight flex items-center gap-1.5">
+                <span>ONLINE KARŞILIKLI OYNA</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-pink-400 text-slate-950 font-black animate-pulse">2 OYUNCU</span>
+              </div>
+              <div className="text-[10px] font-semibold text-purple-100">
+                Oda Aç / Kodla Katıl • Gerçek Zamanlı PvP
+              </div>
+            </div>
+          </div>
+          <Sparkles className="w-5 h-5 text-pink-300 fill-pink-400/30" />
+        </button>
+
+        {/* PRIMARY 2: TURNUVA MODU (40 ÜLKE) */}
         <button
           id="tournament-mode-btn"
           onClick={onStartTournament}
-          className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white font-black text-sm tracking-wider flex items-center justify-between shadow-[0_0_20px_rgba(20,184,166,0.35)] active:scale-[0.98] transition hover:brightness-110"
+          className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white font-black text-xs tracking-wider flex items-center justify-between shadow-[0_0_20px_rgba(20,184,166,0.35)] active:scale-[0.98] transition hover:brightness-110"
         >
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-slate-950/30 flex items-center justify-center text-lg">
+            <div className="w-7 h-7 rounded-xl bg-slate-950/30 flex items-center justify-center text-base">
               🇹🇷
             </div>
             <div className="text-left">
@@ -214,10 +313,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               </div>
             </div>
           </div>
-          <Trophy className="w-5 h-5 text-amber-300 fill-amber-400/30" />
+          <Trophy className="w-4 h-4 text-amber-300 fill-amber-400/30" />
         </button>
 
-        {/* PRIMARY 2: MACERA MODU BUTTON */}
+        {/* PRIMARY 3: MACERA MODU BUTTON */}
         <button
           id="adventure-mode-btn"
           onClick={onStartAdventure}

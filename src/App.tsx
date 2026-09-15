@@ -7,6 +7,8 @@ import { GameOverModal } from './components/GameOverModal';
 import { AdventureRoadmap } from './components/AdventureRoadmap';
 import { TournamentSelect } from './components/TournamentSelect';
 import { TournamentRoadmap } from './components/TournamentRoadmap';
+import { MultiplayerLobby } from './components/MultiplayerLobby';
+import { MultiplayerManager } from './utils/multiplayer';
 import {
   ADVENTURE_STAGES,
   DifficultyBadge,
@@ -38,6 +40,14 @@ export default function App() {
   const [isTournamentMode, setIsTournamentMode] = useState<boolean>(false);
   const [playerTeam, setPlayerTeam] = useState<CountryTeam | null>(null);
   const [currentTournamentMatch, setCurrentTournamentMatch] = useState<TournamentMatch | null>(null);
+
+  // Multiplayer mode tracking
+  const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
+  const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'guest' | null>(null);
+  const [multiplayerManager, setMultiplayerManager] = useState<MultiplayerManager | null>(null);
+  const [multiplayerOpponentTeam, setMultiplayerOpponentTeam] = useState<CountryTeam | null>(null);
+  const [multiplayerRematchPending, setMultiplayerRematchPending] = useState<boolean>(false);
+
   const [cardState, setCardState] = useState<CardPenaltyState>({
     playerYellowCards: 0,
     playerIsEjected: false,
@@ -318,10 +328,103 @@ export default function App() {
 
   const handleQuitToMenu = useCallback(() => {
     soundEngine.playClick();
+    if (multiplayerManager) {
+      multiplayerManager.destroy();
+      setMultiplayerManager(null);
+    }
+    setIsMultiplayer(false);
+    setMultiplayerRole(null);
+    setMultiplayerOpponentTeam(null);
     setActivePowerUps([]);
     setIsPaused(false);
     setScreen('menu');
+  }, [multiplayerManager]);
+
+  const handleStartMultiplayer = useCallback(() => {
+    soundEngine.playClick();
+    setIsMultiplayer(true);
+    setIsAdventureMode(false);
+    setIsTournamentMode(false);
+    setCurrentStage(null);
+    setCurrentTournamentMatch(null);
+    setScreen('multiplayer_lobby');
   }, []);
+
+  const handleStartOnlineMatch = useCallback(
+    (
+      manager: MultiplayerManager,
+      role: 'host' | 'guest',
+      pTeam: CountryTeam,
+      oppTeam: CountryTeam,
+      tgtScore: number
+    ) => {
+      soundEngine.playWhistle();
+      setIsMultiplayer(true);
+      setMultiplayerManager(manager);
+      setMultiplayerRole(role);
+      setPlayerTeam(pTeam);
+      setMultiplayerOpponentTeam(oppTeam);
+      setMultiplayerRematchPending(false);
+      setIsAdventureMode(false);
+      setIsTournamentMode(false);
+      setDifficulty('casual');
+
+      setCardState({
+        playerYellowCards: 0,
+        playerIsEjected: false,
+        opponentYellowCards: 0,
+        opponentIsEjected: false,
+        playerHardStrikes: 0,
+        opponentHardStrikes: 0,
+      });
+      setScore({
+        player: 0,
+        opponent: 0,
+        targetScore: tgtScore,
+      });
+      setCombo(0);
+      setRallyCount(0);
+      setActivePowerUps([]);
+      setIsPaused(false);
+      setScreen('playing');
+
+      // Setup rematch listener on manager
+      manager.subscribe((status, payload) => {
+        const data = payload as { event?: string; data?: unknown } | undefined;
+        if (data?.event === 'match_start') {
+          // Restart game for rematch
+          setScore({ player: 0, opponent: 0, targetScore: tgtScore });
+          setCombo(0);
+          setRallyCount(0);
+          setActivePowerUps([]);
+          setMultiplayerRematchPending(false);
+          setIsPaused(false);
+          setScreen('playing');
+        } else if (data?.event === 'rematch_requested') {
+          setMultiplayerRematchPending(true);
+        }
+      });
+    },
+    []
+  );
+
+  const handleMultiplayerRematch = useCallback(() => {
+    soundEngine.playClick();
+    if (!multiplayerManager) return;
+    if (multiplayerRole === 'host') {
+      multiplayerManager.startMatch();
+      setScore({ player: 0, opponent: 0, targetScore: score.targetScore });
+      setCombo(0);
+      setRallyCount(0);
+      setActivePowerUps([]);
+      setMultiplayerRematchPending(false);
+      setIsPaused(false);
+      setScreen('playing');
+    } else {
+      multiplayerManager.requestRematch();
+      setMultiplayerRematchPending(true);
+    }
+  }, [multiplayerManager, multiplayerRole, score.targetScore]);
 
   const handleOpenRoadmap = useCallback(() => {
     soundEngine.playClick();
@@ -355,11 +458,21 @@ export default function App() {
           onStartGame={handleStartGame}
           onStartAdventure={handleStartAdventure}
           onStartTournament={handleStartTournament}
+          onStartMultiplayer={handleStartMultiplayer}
           difficulty={difficulty}
           setDifficulty={setDifficulty}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           bestCombo={bestCombo}
+        />
+      )}
+
+      {/* Screen 1.5: Multiplayer Lobby */}
+      {screen === 'multiplayer_lobby' && (
+        <MultiplayerLobby
+          onBackToMenu={handleQuitToMenu}
+          onStartOnlineMatch={handleStartOnlineMatch}
+          initialPlayerTeam={playerTeam}
         />
       )}
 
@@ -404,20 +517,24 @@ export default function App() {
             onTogglePause={() => setIsPaused((prev) => !prev)}
             onResume={() => setIsPaused(false)}
             onRestart={() => (
-              currentTournamentMatch && playerTeam
+              isMultiplayer
+                ? handleMultiplayerRematch()
+                : currentTournamentMatch && playerTeam
                 ? handleStartTournamentMatch(currentTournamentMatch, playerTeam)
                 : currentStage
                 ? handleStartStage(currentStage)
                 : handleStartGame(difficulty)
             )}
-            onQuit={isTournamentMode ? () => setScreen('tournament_roadmap') : isAdventureMode ? handleOpenRoadmap : handleQuitToMenu}
+            onQuit={isMultiplayer ? handleQuitToMenu : isTournamentMode ? () => setScreen('tournament_roadmap') : isAdventureMode ? handleOpenRoadmap : handleQuitToMenu}
             isMuted={isMuted}
             onToggleMute={handleToggleMute}
             difficulty={difficulty}
             activePowerUps={activePowerUps}
-            playerTeam={isTournamentMode ? playerTeam : null}
-            opponentTeam={isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
+            playerTeam={isMultiplayer ? playerTeam : isTournamentMode ? playerTeam : null}
+            opponentTeam={isMultiplayer ? multiplayerOpponentTeam : isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
             cardState={cardState}
+            isMultiplayer={isMultiplayer}
+            multiplayerRole={multiplayerRole}
           />
 
           <div className="flex-1 w-full h-full relative overflow-hidden">
@@ -433,9 +550,12 @@ export default function App() {
               onComboChange={setCombo}
               onRallyChange={setRallyCount}
               onActivePowerUpsChange={setActivePowerUps}
-              playerTeam={isTournamentMode ? playerTeam : null}
-              opponentTeam={isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
+              playerTeam={isMultiplayer ? playerTeam : isTournamentMode ? playerTeam : null}
+              opponentTeam={isMultiplayer ? multiplayerOpponentTeam : isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
               onCardStateChange={setCardState}
+              isMultiplayer={isMultiplayer}
+              multiplayerRole={multiplayerRole}
+              multiplayerManager={multiplayerManager}
             />
           </div>
         </div>
@@ -457,8 +577,8 @@ export default function App() {
               onGameOver={() => {}}
               onComboChange={() => {}}
               onRallyChange={() => {}}
-              playerTeam={isTournamentMode ? playerTeam : null}
-              opponentTeam={isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
+              playerTeam={isMultiplayer ? playerTeam : isTournamentMode ? playerTeam : null}
+              opponentTeam={isMultiplayer ? multiplayerOpponentTeam : isTournamentMode ? currentTournamentMatch?.opponentTeam : null}
             />
           </div>
 
@@ -472,16 +592,20 @@ export default function App() {
             onNextStage={handleNextStage}
             onOpenRoadmap={handleOpenRoadmap}
             unlockedBadge={unlockedBadge}
-            onPlayAgain={handlePlayAgain}
+            onPlayAgain={isMultiplayer ? handleMultiplayerRematch : handlePlayAgain}
             onMainMenu={handleQuitToMenu}
             isTournamentMode={isTournamentMode}
             playerTeam={playerTeam}
-            opponentTeam={currentTournamentMatch?.opponentTeam}
+            opponentTeam={isMultiplayer ? multiplayerOpponentTeam : currentTournamentMatch?.opponentTeam}
             tournamentMatch={currentTournamentMatch}
             onNextTournamentMatch={handleNextTournamentMatch}
             onOpenTournamentRoadmap={() => setScreen('tournament_roadmap')}
             hasNextTournamentMatch={!!currentTournamentMatch && currentTournamentMatch.matchNumber < 40}
             isChampion={!!tournamentProgress?.isChampion}
+            isMultiplayer={isMultiplayer}
+            multiplayerRole={multiplayerRole}
+            onMultiplayerRematch={handleMultiplayerRematch}
+            multiplayerRematchPending={multiplayerRematchPending}
           />
         </>
       )}

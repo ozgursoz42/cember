@@ -28,6 +28,8 @@ import {
 } from '../utils/physics';
 import { soundEngine } from '../utils/audio';
 import { StageTheme } from '../adventureData';
+import { gyroController } from '../utils/gyroscope';
+import { MultiplayerManager, NetworkGameStatePayload, NetworkInputPayload } from '../utils/multiplayer';
 
 interface GameCanvasProps {
   difficulty: GameDifficulty;
@@ -44,6 +46,10 @@ interface GameCanvasProps {
   playerTeam?: CountryTeam | null;
   opponentTeam?: CountryTeam | null;
   onCardStateChange?: (state: CardPenaltyState) => void;
+  // Multiplayer Mode Props
+  isMultiplayer?: boolean;
+  multiplayerRole?: 'host' | 'guest' | null;
+  multiplayerManager?: MultiplayerManager | null;
 }
 
 const createDefaultSensor = (
@@ -95,6 +101,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   playerTeam,
   opponentTeam,
   onCardStateChange,
+  isMultiplayer,
+  multiplayerRole,
+  multiplayerManager,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -992,6 +1001,160 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
   }, []);
 
+  // Multiplayer Network Event Listeners
+  useEffect(() => {
+    if (!isMultiplayer || !multiplayerManager) return;
+
+    if (multiplayerRole === 'host') {
+      const unsub = multiplayerManager.onInput((input: NetworkInputPayload) => {
+        const w = gameStateRef.current.width;
+        const h = gameStateRef.current.height;
+        const opp = opponentPaddleRef.current;
+        const halfW = opp.width / 2;
+        // Invert X & Y for host (guest is at the top of host screen)
+        opp.targetX = clamp((1 - input.targetX) * w, halfW + 8, w - halfW - 8);
+        opp.targetY = clamp((1 - input.targetY) * h, 25, h * 0.46);
+
+        if (input.isSmash) {
+          const b = ballsRef.current[0] || ballRef.current;
+          const dist = Math.hypot(b.x - opp.x, b.y - opp.y);
+          if (dist < 75 && b.vy < 0) {
+            b.vy = Math.abs(b.vy) * 1.15;
+            b.speed = Math.min(b.speed * 1.15, b.maxSpeed);
+            b.isSmash = true;
+            soundEngine.playSmashHit();
+            spawnHitParticles(b.x, b.y, '#f43f5e', 16, 1.5);
+            spawnShockwave(b.x, b.y, '#f43f5e', 60);
+          }
+        }
+      });
+      return unsub;
+    } else if (multiplayerRole === 'guest') {
+      const unsub = multiplayerManager.onState((netState: NetworkGameStatePayload) => {
+        const w = gameStateRef.current.width;
+        const h = gameStateRef.current.height;
+
+        // Sync Balls
+        if (netState.balls && netState.balls.length > 0) {
+          ballsRef.current = netState.balls.map((nb, idx) => {
+            const existing = ballsRef.current[idx];
+            return {
+              id: existing?.id || Math.random().toString(),
+              x: (1 - nb.x) * w,
+              y: (1 - nb.y) * h,
+              vx: -nb.vx * (w / 360),
+              vy: -nb.vy * (h / 640),
+              radius: nb.radius,
+              speed: nb.speed,
+              baseSpeed: 290,
+              maxSpeed: 920,
+              isSlowMo: nb.isSlowMo,
+              isFireball: nb.isFireball,
+              isMini: nb.isMini,
+              isSmash: nb.isSmash,
+              lastHitter: nb.lastHitter === 'player' ? 'opponent' : nb.lastHitter === 'opponent' ? 'player' : 'none',
+              deflectedBySensor: nb.deflectedBySensor,
+              trail: existing?.trail || [],
+            };
+          });
+          ballRef.current = ballsRef.current[0];
+        }
+
+        // Host paddle is opponent for guest
+        const opp = opponentPaddleRef.current;
+        opp.x = (1 - netState.hostPaddle.x) * w;
+        opp.y = (1 - netState.hostPaddle.y) * h;
+        opp.width = (netState.hostPaddle.width / 360) * w;
+        opp.isFrozen = netState.hostPaddle.isFrozen;
+        opp.freezeTimer = netState.hostPaddle.freezeTimer;
+        opp.isMegaPaddle = netState.hostPaddle.isMegaPaddle;
+        opp.megaPaddleTimer = netState.hostPaddle.megaPaddleTimer;
+        opp.isRocketPowered = netState.hostPaddle.isRocketPowered;
+        opp.isFiery = netState.hostPaddle.isFiery;
+
+        // Guest paddle is player for guest
+        const ply = playerPaddleRef.current;
+        ply.x = lerp(ply.x, (1 - netState.guestPaddle.x) * w, 0.4);
+        ply.y = lerp(ply.y, (1 - netState.guestPaddle.y) * h, 0.4);
+        ply.width = (netState.guestPaddle.width / 360) * w;
+        ply.isFrozen = netState.guestPaddle.isFrozen;
+        ply.freezeTimer = netState.guestPaddle.freezeTimer;
+        ply.isMegaPaddle = netState.guestPaddle.isMegaPaddle;
+        ply.megaPaddleTimer = netState.guestPaddle.megaPaddleTimer;
+        ply.isRocketPowered = netState.guestPaddle.isRocketPowered;
+        ply.isFiery = netState.guestPaddle.isFiery;
+
+        // Sensors
+        if (netState.sensors) {
+          sensorsRef.current = netState.sensors.map((ns, idx) => {
+            const existing = sensorsRef.current[idx];
+            return {
+              ...(existing || createDefaultSensor(w / 2, h / 2, 0, ns.radius)),
+              x: (1 - ns.x) * w,
+              y: (1 - ns.y) * h,
+              radius: ns.radius,
+              isFrozen: ns.isFrozen,
+              isScorched: ns.isScorched,
+              glowColor: ns.glowColor,
+            };
+          });
+        }
+
+        // Power-ups
+        if (netState.powerUps) {
+          powerUpsRef.current = netState.powerUps.map((np) => ({
+            id: np.id,
+            type: np.type,
+            x: (1 - np.x) * w,
+            y: (1 - np.y) * h,
+            vx: 0,
+            vy: 0,
+            radius: 15.5,
+            phase: 0,
+            name: '',
+            symbol: '',
+            isHarmful: np.isHarmful,
+          }));
+        }
+
+        // Scores
+        if (netState.score) {
+          if (
+            netState.score.player !== gameStateRef.current.currentScore.opponent ||
+            netState.score.opponent !== gameStateRef.current.currentScore.player
+          ) {
+            gameStateRef.current.currentScore.opponent = netState.score.player;
+            gameStateRef.current.currentScore.player = netState.score.opponent;
+            onScoreUpdate(
+              {
+                player: netState.score.opponent,
+                opponent: netState.score.player,
+                targetScore: netState.score.targetScore,
+              },
+              'opponent'
+            );
+          }
+        }
+
+        // Round reset & toast
+        gameStateRef.current.isRoundResetting = netState.isRoundResetting;
+        if (netState.roundBanner) {
+          gameStateRef.current.roundBanner = netState.roundBanner;
+        }
+        if (netState.toast) {
+          powerUpToastRef.current = {
+            title: netState.toast.title,
+            subtitle: netState.toast.subtitle,
+            color: netState.toast.color,
+            icon: netState.toast.icon,
+            timer: 2.0,
+          };
+        }
+      });
+      return unsub;
+    }
+  }, [isMultiplayer, multiplayerManager, multiplayerRole, onScoreUpdate]);
+
   // Main 60FPS Game Loop
   useEffect(() => {
     let animId: number;
@@ -1011,8 +1174,41 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const w = state.width;
       const h = state.height;
 
-      // Only update physics if not paused
-      if (!isPaused && state.isRunning) {
+      // 0. Gyroscope Motion Input Handling
+      const gyro = gyroController.getState();
+      const player = playerPaddleRef.current;
+      if (gyro.isEnabled && !player.isFrozen && !player.isEjected) {
+        const halfW = player.width / 2;
+        const clampedX = clamp(gyro.normalizedX * w, halfW + 8, w - halfW - 8);
+        const clampedY = clamp(gyro.normalizedY * h, h * 0.52, h - 25);
+        player.targetX = clampedX;
+        player.targetY = clampedY;
+
+        if (gyro.isForwardThrust) {
+          const ball = ballsRef.current[0] || ballRef.current;
+          const dist = Math.hypot(ball.x - player.x, ball.y - player.y);
+          if (dist < 75 && ball.vy > 0) {
+            ball.vy = -Math.abs(ball.vy) * 1.15;
+            ball.speed = Math.min(ball.speed * 1.15, ball.maxSpeed);
+            soundEngine.playSmashHit();
+            spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
+            spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
+          }
+        }
+      }
+
+      // Guest: send input to host every frame
+      if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
+        multiplayerManager.sendInput({
+          t: currentTime,
+          targetX: player.targetX / w,
+          targetY: player.targetY / h,
+          isSmash: gyro.isForwardThrust,
+        });
+      }
+
+      // Only update physics if not paused and (not guest in multiplayer)
+      if (!isPaused && state.isRunning && (!isMultiplayer || multiplayerRole === 'host')) {
         // 1. Decay screen shake & launcher flash
         if (state.screenShake > 0) {
           state.screenShake = Math.max(0, state.screenShake - dt * 25);
@@ -1168,6 +1364,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             }
             opponent.vx = 0;
             opponent.vy = 0;
+          } else if (isMultiplayer && multiplayerRole === 'host') {
+            // Multiplayer Host: guest paddle position is driven by guest player input
+            opponent.x = lerp(opponent.x, opponent.targetX, 0.35);
+            opponent.y = lerp(opponent.y, opponent.targetY, 0.35);
+            opponent.prevX = prevOppX;
+            opponent.prevY = prevOppY;
+            opponent.vx = (opponent.x - prevOppX) / Math.max(dt, 0.001);
+            opponent.vy = (opponent.y - prevOppY) / Math.max(dt, 0.001);
           } else {
             // Dynamic 2D AI behavior with forward/backward movement fully active
             let baseAi = 0.12;
@@ -2208,6 +2412,83 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               shockwavesRef.current.splice(i, 1);
             }
           }
+        }
+
+        // Host broadcasts authoritative state snapshot to guest
+        if (isMultiplayer && multiplayerRole === 'host' && multiplayerManager) {
+          const curPlayer = playerPaddleRef.current;
+          const curOpponent = opponentPaddleRef.current;
+          multiplayerManager.sendGameState({
+            t: currentTime,
+            balls: ballsRef.current.map((b) => ({
+              x: b.x / w,
+              y: b.y / h,
+              vx: b.vx / (w / 360),
+              vy: b.vy / (h / 640),
+              radius: b.radius,
+              speed: b.speed,
+              isSlowMo: !!b.isSlowMo,
+              isFireball: !!b.isFireball,
+              isMini: !!b.isMini,
+              isSmash: !!b.isSmash,
+              lastHitter: b.lastHitter,
+              deflectedBySensor: !!b.deflectedBySensor,
+            })),
+            hostPaddle: {
+              x: curPlayer.x / w,
+              y: curPlayer.y / h,
+              width: (curPlayer.width / w) * 360,
+              isFrozen: curPlayer.isFrozen,
+              freezeTimer: curPlayer.freezeTimer,
+              isMegaPaddle: curPlayer.isMegaPaddle,
+              megaPaddleTimer: curPlayer.megaPaddleTimer,
+              isRocketPowered: curPlayer.isRocketPowered,
+              isFiery: curPlayer.isFiery,
+            },
+            guestPaddle: {
+              x: curOpponent.x / w,
+              y: curOpponent.y / h,
+              width: (curOpponent.width / w) * 360,
+              isFrozen: curOpponent.isFrozen,
+              freezeTimer: curOpponent.freezeTimer,
+              isMegaPaddle: curOpponent.isMegaPaddle,
+              megaPaddleTimer: curOpponent.megaPaddleTimer,
+              isRocketPowered: curOpponent.isRocketPowered,
+              isFiery: curOpponent.isFiery,
+            },
+            sensors: sensorsRef.current.map((s) => ({
+              x: s.x / w,
+              y: s.y / h,
+              radius: s.radius,
+              isFrozen: s.isFrozen,
+              isScorched: s.isScorched,
+              glowColor: s.glowColor,
+            })),
+            powerUps: powerUpsRef.current.map((p) => ({
+              id: p.id,
+              type: p.type,
+              x: p.x / w,
+              y: p.y / h,
+              isHarmful: p.isHarmful,
+            })),
+            score: {
+              player: state.currentScore.player,
+              opponent: state.currentScore.opponent,
+              targetScore: state.targetScore,
+            },
+            hostIceWallActive: playerIceWallRef.current.active,
+            guestIceWallActive: opponentIceWallRef.current.active,
+            isRoundResetting: state.isRoundResetting,
+            roundBanner: state.roundBanner,
+            toast: powerUpToastRef.current
+              ? {
+                  title: powerUpToastRef.current.title,
+                  subtitle: powerUpToastRef.current.subtitle,
+                  color: powerUpToastRef.current.color,
+                  icon: powerUpToastRef.current.icon,
+                }
+              : undefined,
+          });
         }
       }
 
@@ -3275,6 +3556,45 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillText(toast.subtitle, w / 2, toastY + 8);
           ctx.restore();
         }
+      }
+
+      // ==========================================
+      // GYROSCOPE HUD LEVEL INDICATOR
+      // ==========================================
+      if (gyro.isEnabled) {
+        ctx.save();
+        const bubbleX = w - 28;
+        const bubbleY = h - 28;
+
+        // Outer Ring
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(bubbleX, bubbleY, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Crosshairs
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(bubbleX - 6, bubbleY);
+        ctx.lineTo(bubbleX + 6, bubbleY);
+        ctx.moveTo(bubbleX, bubbleY - 6);
+        ctx.lineTo(bubbleX, bubbleY + 6);
+        ctx.stroke();
+
+        // Tilt Bead
+        const beadOffX = clamp((gyro.normalizedX - 0.5) * 22, -11, 11);
+        const beadOffY = clamp((gyro.normalizedY - 0.82) * 26, -11, 11);
+        ctx.fillStyle = '#f59e0b';
+        ctx.shadowColor = '#f59e0b';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(bubbleX + beadOffX, bubbleY + beadOffY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
 
       ctx.restore();

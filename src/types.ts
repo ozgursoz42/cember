@@ -4,6 +4,7 @@ export type GameScreen =
   | 'adventure_roadmap'
   | 'tournament_select'
   | 'tournament_roadmap'
+  | 'multiplayer_lobby'
   | 'playing'
   | 'gameover';
 

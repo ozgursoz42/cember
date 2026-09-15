@@ -806,6 +806,40 @@ class SoundEngine {
       // AudioContext safeguard
     }
   }
+
+  public playTrophyCheer() {
+    if (this.isMuted) return;
+    const ctx = this.initCtx();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      // Arpeggiated cheerful major chord fanfare
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const startTime = now + idx * 0.08;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0.25, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(startTime + 0.35);
+      });
+    } catch {
+      // AudioContext safeguard
+    }
+  }
+
+  public playVictoryFanfare() {
+    this.playTrophyCheer();
+  }
 }
 
 export const soundEngine = new SoundEngine();
