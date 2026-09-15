@@ -130,6 +130,7 @@ export class MultiplayerManager {
   public myProfile: PlayerProfile;
   public opponentProfile: PlayerProfile | null = null;
   public targetScore: number = 5;
+  public gameStarted: boolean = false;
 
   private clientId: string;
   private mqttClient: MqttClient | null = null;
@@ -272,6 +273,7 @@ export class MultiplayerManager {
 
   private setupMqttSubscriptions(client: MqttClient, code: string) {
     const topics = [
+      `${this.getTopicPrefix(code)}/#`,
       this.getLobbyTopic(code),
       this.getHostToGuestTopic(code),
       this.getGuestToHostTopic(code),
@@ -310,6 +312,7 @@ export class MultiplayerManager {
     const cleanCode = MultiplayerManager.normalizeRoomCode(roomCode);
     this.roomCode = cleanCode;
     this.targetScore = targetScore;
+    this.gameStarted = false;
     this.setStatus('initializing');
     this.errorMessage = '';
 
@@ -322,7 +325,7 @@ export class MultiplayerManager {
       // Periodically announce presence so joining guests immediately see host
       if (this.presenceInterval) clearInterval(this.presenceInterval);
       this.presenceInterval = window.setInterval(() => {
-        if (this.status === 'waiting_for_peer' && this.roomCode === cleanCode) {
+        if (this.roomCode === cleanCode) {
           this.send({
             type: 'HOST_PRESENCE',
             code: cleanCode,
@@ -330,7 +333,7 @@ export class MultiplayerManager {
             targetScore: this.targetScore,
           });
         }
-      }, 1500);
+      }, 1200);
 
       // Send immediate first presence announcement
       this.send({
@@ -355,6 +358,7 @@ export class MultiplayerManager {
     this.role = 'guest';
     const cleanCode = MultiplayerManager.normalizeRoomCode(roomCode);
     this.roomCode = cleanCode;
+    this.gameStarted = false;
     this.setStatus('connecting');
     this.errorMessage = '';
 
@@ -362,10 +366,10 @@ export class MultiplayerManager {
       this.setupBroadcastChannel(cleanCode);
       await this.connectToBroker(cleanCode);
 
-      // Start Handshake Loop: Send handshake every 600ms until connected
+      // Start Handshake Loop: Send handshake until connected
       let attempts = 0;
       const sendHandshake = () => {
-        if (this.status === 'connected') {
+        if ((this.status as ConnectionStatus) === 'connected') {
           if (this.handshakeInterval) {
             clearInterval(this.handshakeInterval);
             this.handshakeInterval = null;
@@ -379,7 +383,7 @@ export class MultiplayerManager {
           profile: this.myProfile,
         });
 
-        if (attempts > 20 && (this.status as ConnectionStatus) !== 'connected') {
+        if (attempts > 30 && (this.status as ConnectionStatus) !== 'connected') {
           if (this.handshakeInterval) {
             clearInterval(this.handshakeInterval);
             this.handshakeInterval = null;
@@ -391,7 +395,7 @@ export class MultiplayerManager {
 
       sendHandshake();
       if (this.handshakeInterval) clearInterval(this.handshakeInterval);
-      this.handshakeInterval = window.setInterval(sendHandshake, 700);
+      this.handshakeInterval = window.setInterval(sendHandshake, 600);
     } catch (err: any) {
       console.error('Failed to join room:', err);
       this.errorMessage = 'Odaya bağlanılamadı.';
@@ -405,12 +409,16 @@ export class MultiplayerManager {
 
     switch (msg.type) {
       case 'HOST_PRESENCE': {
-        if (this.role === 'guest' && this.status !== 'connected') {
+        if (this.role === 'guest') {
           this.opponentProfile = msg.profile;
           if (msg.targetScore) {
             this.targetScore = msg.targetScore;
           }
-          // Immediately respond with handshake to complete mutual handshake
+          if (this.handshakeInterval) {
+            clearInterval(this.handshakeInterval);
+            this.handshakeInterval = null;
+          }
+          // Respond with handshake
           this.send({
             type: 'HANDSHAKE',
             profile: this.myProfile,
@@ -446,6 +454,10 @@ export class MultiplayerManager {
         if (msg.targetScore) {
           this.targetScore = msg.targetScore;
         }
+        if (this.handshakeInterval) {
+          clearInterval(this.handshakeInterval);
+          this.handshakeInterval = null;
+        }
         this.setStatus('connected');
         this.notify('handshake_received', msg.profile);
         this.startPingLoop();
@@ -461,6 +473,7 @@ export class MultiplayerManager {
       }
 
       case 'START_GAME': {
+        this.gameStarted = true;
         if (msg.targetScore) {
           this.targetScore = msg.targetScore;
         }
@@ -470,6 +483,11 @@ export class MultiplayerManager {
       }
 
       case 'STATE': {
+        if (this.role === 'guest' && !this.gameStarted) {
+          this.gameStarted = true;
+          this.notify('game_started');
+          this.notify('match_start');
+        }
         this.stateListeners.forEach((fn) => fn(msg.data));
         break;
       }
@@ -497,7 +515,10 @@ export class MultiplayerManager {
       }
 
       case 'REMATCH_ACCEPT': {
+        this.gameStarted = true;
         this.notify('rematch_accepted');
+        this.notify('game_started');
+        this.notify('match_start');
         break;
       }
 
@@ -563,7 +584,17 @@ export class MultiplayerManager {
 
   public startGame() {
     if (this.role === 'host') {
-      this.send({ type: 'START_GAME', targetScore: this.targetScore });
+      this.gameStarted = true;
+      // Burst START_GAME to guarantee arrival
+      const sendStart = () => {
+        this.send({ type: 'START_GAME', targetScore: this.targetScore });
+      };
+      sendStart();
+      setTimeout(sendStart, 60);
+      setTimeout(sendStart, 140);
+      setTimeout(sendStart, 260);
+      setTimeout(sendStart, 480);
+
       this.notify('game_started');
       this.notify('match_start');
     }
@@ -578,6 +609,7 @@ export class MultiplayerManager {
   }
 
   public acceptRematch() {
+    this.gameStarted = true;
     this.send({ type: 'REMATCH_ACCEPT' });
     this.notify('rematch_accepted');
   }

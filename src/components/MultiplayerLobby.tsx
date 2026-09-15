@@ -46,6 +46,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
 
   const managerRef = useRef<MultiplayerManager | null>(null);
+  const hasStartedMatchRef = useRef<boolean>(false);
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('idle');
   const [opponentTeam, setOpponentTeam] = useState<CountryTeam | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -65,6 +66,11 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
   // Cleanup active manager
   const cleanupManager = useCallback(() => {
+    if (hasStartedMatchRef.current) {
+      // Transfer ownership to match screen, do not cleanup
+      managerRef.current = null;
+      return;
+    }
     if (managerRef.current) {
       managerRef.current.cleanup();
       managerRef.current = null;
@@ -76,6 +82,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   // Initialize Host Room
   const initHostRoom = useCallback(
     (codeToUse: string, scoreVal: number, teamVal: CountryTeam) => {
+      hasStartedMatchRef.current = false;
       cleanupManager();
       setErrorMessage('');
 
@@ -130,7 +137,9 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   // Clean up on component unmount
   useEffect(() => {
     return () => {
-      cleanupManager();
+      if (!hasStartedMatchRef.current) {
+        cleanupManager();
+      }
     };
   }, [cleanupManager]);
 
@@ -175,6 +184,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     }
 
     soundEngine.playClick();
+    hasStartedMatchRef.current = false;
     cleanupManager();
     setErrorMessage('');
     setOpponentTeam(null);
@@ -201,8 +211,11 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       }
 
       if (data?.event === 'game_started' || data?.event === 'match_start') {
-        const opp = net.opponentProfile?.team || TOURNAMENT_COUNTRIES[0];
-        onStartOnlineMatch(net, 'guest', selectedTeam, opp, net.targetScore || 5);
+        if (!hasStartedMatchRef.current) {
+          hasStartedMatchRef.current = true;
+          const opp = net.opponentProfile?.team || TOURNAMENT_COUNTRIES[0];
+          onStartOnlineMatch(net, 'guest', selectedTeam, opp, net.targetScore || 5);
+        }
       }
     });
 
@@ -216,6 +229,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     const net = managerRef.current;
     if (!net || !opponentTeam) return;
     soundEngine.playClick();
+    hasStartedMatchRef.current = true;
     net.startGame();
     onStartOnlineMatch(net, 'host', selectedTeam, opponentTeam, targetScore);
   };
