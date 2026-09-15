@@ -144,79 +144,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
   const equippedBallSkinRef = useRef<ShopBallSkin>(BALL_SKINS[0]);
 
-  // Debug & Fixed Timestep Physics & Lag-Compensation Refs
-  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
-  const [multiplayerDiag, setMultiplayerDiag] = useState({
-    serverTick: 0,
-    clientTick: 0,
-    ping: 0,
-    packetLoss: 0,
-    lastReceivedServerTick: 0,
-    lastAppliedServerTick: 0,
-    localPaddleX: 0,
-    localPaddleY: 0,
-    serverPaddleX: 0,
-    serverPaddleY: 0,
-    paddleDeltaX: 0,
-    paddleDeltaY: 0,
-    localBallX: 0,
-    localBallY: 0,
-    serverBallX: 0,
-    serverBallY: 0,
-    ballDeltaX: 0,
-    ballDeltaY: 0,
-    ballVx: 0,
-    ballVy: 0,
-    lastCollisionTick: 0,
-    lastCollisionEventId: 'None',
-    receivedEventsCount: 0,
-    duplicateEventsCount: 0,
-    stalePacketsCount: 0,
-    reconciliationCount: 0,
-  });
-
-  const [debugInfo, setDebugInfo] = useState({
-    tick: 0,
-    seq: 0,
-    ping: 0,
-    ballSpeed: 0,
-    ballVx: 0,
-    ballVy: 0,
-    ballX: 0,
-    ballY: 0,
-    prevX: 0,
-    prevY: 0,
-    latency: 0,
-    jitter: 0,
-    loss: 0,
-    lastHit: 'None',
-  });
-
   const physicsAccumulatorRef = useRef(0);
   const serverTickRef = useRef(0);
   const guestInputSeqRef = useRef(0);
   const lastReceivedTickRef = useRef(0);
-  const lastDebugUpdateRef = useRef(0);
 
-  // Authoritative Replicated Events & Historical Lag-Compensation Buffer
+  // Authoritative Replicated Events
   const pendingAuthoritativeEventsRef = useRef<NetworkGameEvent[]>([]);
   const processedEventIdsRef = useRef<Set<string>>(new Set());
-  const paddleHistoryBufferRef = useRef<{
-    serverTick: number;
-    timestamp: number;
-    hostX: number;
-    hostY: number;
-    hostWidth: number;
-    guestX: number;
-    guestY: number;
-    guestWidth: number;
-  }[]>([]);
-
-  // Diagnostics counters for audit panel
-  const receivedEventsCountRef = useRef(0);
-  const duplicateEventsCountRef = useRef(0);
-  const stalePacketsCountRef = useRef(0);
-  const reconciliationCountRef = useRef(0);
   const lastCollisionEventIdRef = useRef('None');
   const lastCollisionTickRef = useRef(0);
   const lastReceivedGuestSeqRef = useRef(0);
@@ -1533,7 +1468,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         // Discard out-of-order or duplicate state snapshots
         if (netState.serverTick !== undefined) {
           if (netState.serverTick <= lastReceivedTickRef.current) {
-            stalePacketsCountRef.current++;
             return;
           }
           lastReceivedTickRef.current = netState.serverTick;
@@ -1546,11 +1480,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (netState.events && netState.events.length > 0) {
           netState.events.forEach((evt) => {
             if (processedEventIdsRef.current.has(evt.eventId)) {
-              duplicateEventsCountRef.current++;
               return;
             }
             processedEventIdsRef.current.add(evt.eventId);
-            receivedEventsCountRef.current++;
             processGameEventLocally(evt);
           });
         }
@@ -1961,9 +1893,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             opponent.vx = 0;
             opponent.vy = 0;
           } else if (isMultiplayer && multiplayerRole === 'host') {
-            // Multiplayer Host: guest paddle position is driven by guest player input
-            opponent.x = lerp(opponent.x, opponent.targetX, 0.35);
-            opponent.y = lerp(opponent.y, opponent.targetY, 0.35);
+            // Multiplayer Host: guest paddle position is driven by guest player input with zero lag
+            opponent.x = opponent.targetX;
+            opponent.y = opponent.targetY;
             opponent.prevX = prevOppX;
             opponent.prevY = prevOppY;
             opponent.vx = (opponent.x - prevOppX) / Math.max(dt, 0.001);
@@ -2564,34 +2496,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 }
               }
 
-              // OPPONENT PADDLE COLLISION (Supports smash, rocket & Card Penalty Detection with Authoritative Lag Compensation)
+              // OPPONENT PADDLE COLLISION (Supports smash, rocket & Card Penalty Detection)
               if (!opponent.isEjected) {
-                let oppHit = checkBallPaddleCollision(currentBall, opponent, difficulty);
-
-                // Authoritative Lag Compensation: If no collision with current paddle state on host,
-                // check collision against Guest's historical paddle position rewound by latency lagTicks
-                if (!oppHit.collided && isMultiplayer && multiplayerRole === 'host' && paddleHistoryBufferRef.current.length > 0) {
-                  const lagTicks = Math.max(1, Math.min(30, Math.round(((multiplayerManager?.ping || 50) / 1000) * 60)));
-                  const targetTick = Math.max(0, serverTickRef.current - lagTicks);
-                  const historicalSnap = paddleHistoryBufferRef.current.find((h) => h.serverTick === targetTick) ||
-                    paddleHistoryBufferRef.current[paddleHistoryBufferRef.current.length - 1];
-
-                  if (historicalSnap) {
-                    const histOpponent: Paddle = {
-                      ...opponent,
-                      x: historicalSnap.guestX,
-                      y: historicalSnap.guestY,
-                      prevX: historicalSnap.guestX,
-                      prevY: historicalSnap.guestY,
-                      width: historicalSnap.guestWidth,
-                    };
-                    const histResult = checkBallPaddleCollision(currentBall, histOpponent, difficulty);
-                    if (histResult.collided) {
-                      oppHit = histResult;
-                      reconciliationCountRef.current++;
-                    }
-                  }
-                }
+                const oppHit = checkBallPaddleCollision(currentBall, opponent, difficulty);
 
                 if (oppHit.collided) {
                   opponent.hitFlash = 1.0;
@@ -3143,21 +3050,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           pendingAuthoritativeEventsRef.current = [];
 
           serverTickRef.current += 1;
-
-          // Record historical paddle snapshot for lag compensation
-          paddleHistoryBufferRef.current.push({
-            serverTick: serverTickRef.current,
-            timestamp: performance.now(),
-            hostX: curPlayer.x,
-            hostY: curPlayer.y,
-            hostWidth: curPlayer.width,
-            guestX: curOpponent.x,
-            guestY: curOpponent.y,
-            guestWidth: curOpponent.width,
-          });
-          if (paddleHistoryBufferRef.current.length > 60) {
-            paddleHistoryBufferRef.current.shift();
-          }
 
           multiplayerManager.sendGameState({
             serverTick: serverTickRef.current,
@@ -4517,62 +4409,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.restore();
       }
 
-      // Periodic multiplayer synchronization diagnostics update
-      if (currentTime - lastDebugUpdateRef.current > 120) {
-        lastDebugUpdateRef.current = currentTime;
-        const mainB = ballsRef.current[0];
-        const curPlayer = playerPaddleRef.current;
-        const curOpponent = opponentPaddleRef.current;
-        const w = gameStateRef.current.width || 360;
-        const h = gameStateRef.current.height || 640;
-
-        setMultiplayerDiag({
-          serverTick: serverTickRef.current,
-          clientTick: guestInputSeqRef.current,
-          ping: multiplayerManager?.ping || 0,
-          packetLoss: Math.round((multiplayerManager?.simulatedPacketLoss || 0) * 100),
-          lastReceivedServerTick: lastReceivedTickRef.current,
-          lastAppliedServerTick: lastReceivedTickRef.current,
-          localPaddleX: Math.round(curPlayer.x),
-          localPaddleY: Math.round(curPlayer.y),
-          serverPaddleX: Math.round(curOpponent.x),
-          serverPaddleY: Math.round(curOpponent.y),
-          paddleDeltaX: Math.round(Math.abs(curPlayer.x - curOpponent.x)),
-          paddleDeltaY: Math.round(Math.abs(curPlayer.y - curOpponent.y)),
-          localBallX: Math.round(mainB?.x || 0),
-          localBallY: Math.round(mainB?.y || 0),
-          serverBallX: Math.round(mainB?.prevX || mainB?.x || 0),
-          serverBallY: Math.round(mainB?.prevY || mainB?.y || 0),
-          ballDeltaX: Math.round(Math.abs((mainB?.x || 0) - (mainB?.prevX || mainB?.x || 0))),
-          ballDeltaY: Math.round(Math.abs((mainB?.y || 0) - (mainB?.prevY || mainB?.y || 0))),
-          ballVx: Math.round(mainB?.vx || 0),
-          ballVy: Math.round(mainB?.vy || 0),
-          lastCollisionTick: lastCollisionTickRef.current,
-          lastCollisionEventId: lastCollisionEventIdRef.current,
-          receivedEventsCount: receivedEventsCountRef.current,
-          duplicateEventsCount: duplicateEventsCountRef.current,
-          stalePacketsCount: stalePacketsCountRef.current,
-          reconciliationCount: reconciliationCountRef.current,
-        });
-
-        setDebugInfo({
-          tick: serverTickRef.current,
-          seq: guestInputSeqRef.current,
-          ping: multiplayerManager?.ping || 0,
-          ballSpeed: Math.round(mainB ? Math.hypot(mainB.vx, mainB.vy) : 0),
-          ballVx: Math.round(mainB?.vx || 0),
-          ballVy: Math.round(mainB?.vy || 0),
-          ballX: Math.round(mainB?.x || 0),
-          ballY: Math.round(mainB?.y || 0),
-          prevX: Math.round(mainB?.prevX || mainB?.x || 0),
-          prevY: Math.round(mainB?.prevY || mainB?.y || 0),
-          latency: multiplayerManager?.simulatedLatencyMs || 0,
-          jitter: multiplayerManager?.simulatedJitterMs || 0,
-          loss: Math.round((multiplayerManager?.simulatedPacketLoss || 0) * 100),
-          lastHit: mainB ? `hitter:${mainB.lastHitter}` : 'None',
-        });
-      }
-
       ctx.restore();
 
       animId = requestAnimationFrame(loop);
@@ -4593,151 +4429,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         id="cember-game-canvas"
         className="block w-full h-full max-w-md mx-auto cursor-pointer"
       />
-
-      {/* Debug Mode Toggle Button */}
-      <button
-        id="debug-mode-toggle-btn"
-        onClick={() => setShowDebugOverlay((prev) => !prev)}
-        className="absolute top-2 right-2 z-50 px-2 py-1 text-[11px] font-mono font-bold rounded bg-slate-900/80 border border-cyan-500/50 text-cyan-400 hover:bg-slate-800 transition-colors shadow-lg"
-      >
-        🐞 {showDebugOverlay ? 'HIDE DIAGNOSTICS' : 'MULTIPLAYER DIAGNOSTICS'}
-      </button>
-
-      {/* Multiplayer Synchronization Diagnostics Panel */}
-      {showDebugOverlay && (
-        <div
-          id="debug-overlay-panel"
-          className="absolute top-10 right-2 z-50 w-80 max-h-[88vh] overflow-y-auto p-3 text-xs font-mono bg-slate-950/95 backdrop-blur-md border border-cyan-500/50 rounded-xl text-slate-200 shadow-2xl space-y-2.5 pointer-events-auto select-none"
-        >
-          <div className="flex items-center justify-between border-b border-cyan-500/40 pb-1.5">
-            <span className="font-bold text-cyan-300">NET SYNC DIAGNOSTICS</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold">
-              {multiplayerRole === 'host' ? 'SERVER AUTHORITATIVE' : 'CLIENT PREDICTIVE'}
-            </span>
-          </div>
-
-          {/* Core Ticks & Latency */}
-          <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-            <div><span className="text-slate-400">Server Tick:</span> #{multiplayerDiag.serverTick}</div>
-            <div><span className="text-slate-400">Client Input Seq:</span> #{multiplayerDiag.clientTick}</div>
-            <div><span className="text-slate-400">Recv Server Tick:</span> #{multiplayerDiag.lastReceivedServerTick}</div>
-            <div><span className="text-slate-400">Ping:</span> <span className="text-cyan-400 font-bold">{multiplayerDiag.ping}ms</span></div>
-          </div>
-
-          {/* Positional Deltas (Client vs Server State) */}
-          <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 space-y-1 text-[11px]">
-            <div className="font-semibold text-amber-400 flex items-center justify-between">
-              <span>State Delta (Client vs Server)</span>
-              <span className="text-[10px] text-amber-300 font-normal">Reconciled</span>
-            </div>
-            <div>Ball Local: <span className="text-cyan-300">({multiplayerDiag.localBallX}, {multiplayerDiag.localBallY})</span></div>
-            <div>Ball Server: <span className="text-cyan-300">({multiplayerDiag.serverBallX}, {multiplayerDiag.serverBallY})</span></div>
-            <div>Ball Delta (dx, dy): <span className="text-emerald-400 font-bold">({multiplayerDiag.ballDeltaX}px, {multiplayerDiag.ballDeltaY}px)</span></div>
-            <div>Paddle Delta: <span className="text-emerald-400 font-bold">({multiplayerDiag.paddleDeltaX}px, {multiplayerDiag.paddleDeltaY}px)</span></div>
-          </div>
-
-          {/* Event Replication & Deduplication */}
-          <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 space-y-1 text-[11px]">
-            <div className="font-semibold text-purple-400">Authoritative Event Telemetry</div>
-            <div>Recv Events: <span className="text-cyan-300 font-bold">{multiplayerDiag.receivedEventsCount}</span></div>
-            <div>Duplicates Suppressed: <span className="text-emerald-400 font-bold">{multiplayerDiag.duplicateEventsCount}</span></div>
-            <div>Stale Packets Dropped: <span className="text-amber-400 font-bold">{multiplayerDiag.stalePacketsCount}</span></div>
-            <div>Lag Comp Rewinds: <span className="text-purple-300 font-bold">{multiplayerDiag.reconciliationCount}</span></div>
-            <div className="truncate">Last Evt ID: <span className="text-slate-400">{multiplayerDiag.lastCollisionEventId}</span></div>
-          </div>
-
-          {/* High Speed Physics Safety Tests */}
-          <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 space-y-1.5 text-[11px]">
-            <div className="font-semibold text-rose-400">High-Speed Ball Stress Tests</div>
-            <div className="grid grid-cols-3 gap-1">
-              <button
-                id="btn-speed-2x"
-                onClick={() => {
-                  ballsRef.current.forEach(b => {
-                    b.vx *= 2;
-                    b.vy *= 2;
-                    b.speed *= 2;
-                  });
-                }}
-                className="px-1.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 border border-rose-500/40 text-rose-300 rounded text-center font-bold"
-              >
-                2x Speed
-              </button>
-              <button
-                id="btn-speed-5x"
-                onClick={() => {
-                  ballsRef.current.forEach(b => {
-                    b.vx *= 5;
-                    b.vy *= 5;
-                    b.speed *= 5;
-                  });
-                }}
-                className="px-1.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 rounded text-center font-bold"
-              >
-                5x Speed
-              </button>
-              <button
-                id="btn-speed-10x"
-                onClick={() => {
-                  ballsRef.current.forEach(b => {
-                    b.vx *= 10;
-                    b.vy *= 10;
-                    b.speed *= 10;
-                  });
-                }}
-                className="px-1.5 py-1 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/40 text-purple-300 rounded text-center font-bold"
-              >
-                10x Speed
-              </button>
-            </div>
-          </div>
-
-          {/* Latency & Packet Loss Controls */}
-          <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 space-y-1.5 text-[11px]">
-            <div className="font-semibold text-cyan-400">Network Condition Simulator</div>
-            <div className="grid grid-cols-3 gap-1">
-              {[0, 50, 100, 150, 200, 250].map((ms) => (
-                <button
-                  key={ms}
-                  id={`btn-latency-${ms}`}
-                  onClick={() => {
-                    if (multiplayerManager) {
-                      multiplayerManager.simulatedLatencyMs = ms;
-                      multiplayerManager.simulatedJitterMs = ms > 0 ? 20 : 0;
-                    }
-                  }}
-                  className={`px-1 py-1 rounded border text-center font-bold transition-colors ${
-                    debugInfo.latency === ms
-                      ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  {ms}ms
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <span>Packet Loss ({multiplayerDiag.packetLoss}%):</span>
-              <button
-                id="btn-toggle-loss"
-                onClick={() => {
-                  if (multiplayerManager) {
-                    multiplayerManager.simulatedPacketLoss = multiplayerManager.simulatedPacketLoss > 0 ? 0 : 0.1;
-                  }
-                }}
-                className={`px-2 py-0.5 rounded border font-bold transition-colors ${
-                  multiplayerDiag.packetLoss > 0
-                    ? 'bg-red-500/30 text-red-300 border-red-500'
-                    : 'bg-slate-800 text-slate-300 border-slate-700'
-                }`}
-              >
-                {multiplayerDiag.packetLoss > 0 ? '10% LOSS ON' : 'NO LOSS'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
