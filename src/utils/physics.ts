@@ -92,8 +92,10 @@ export function checkBallPaddleCollision(
   const halfW = paddle.width / 2;
   const halfH = paddle.height / 2;
 
-  // Check horizontal reach with margin
-  const withinHorizontal = ball.x >= paddle.x - halfW - ball.radius && ball.x <= paddle.x + halfW + ball.radius;
+  // Check horizontal reach spanning current x, prevX, and targetX (if network target exists)
+  const minPadX = Math.min(paddle.x, paddle.prevX, paddle.targetX ?? paddle.x) - halfW - ball.radius - 10;
+  const maxPadX = Math.max(paddle.x, paddle.prevX, paddle.targetX ?? paddle.x) + halfW + ball.radius + 10;
+  const withinHorizontal = ball.x >= minPadX && ball.x <= maxPadX;
 
   if (paddle.isPlayer) {
     // PLAYER PADDLE: hitting UPWARD toward opponent
