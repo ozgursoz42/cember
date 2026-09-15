@@ -1045,7 +1045,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const halfW = opp.width / 2;
         // Invert X & Y for host (guest is at the top of host screen)
         opp.targetX = clamp((1 - input.targetX) * w, halfW + 8, w - halfW - 8);
-        opp.targetY = clamp((1 - input.targetY) * h, 25, h * 0.46);
+        opp.targetY = clamp((1 - input.targetY) * h, 25, h * 0.48);
 
         if (input.isSmash) {
           const b = ballsRef.current[0] || ballRef.current;
@@ -1070,7 +1070,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (netState.gameOver && !hasTriggeredGameOverRef.current) {
           hasTriggeredGameOverRef.current = true;
           gameStateRef.current.isRunning = false;
-          const isGuestWinner = netState.gameOver.winner === 'player';
+          // Invert winner perspective: If host says 'opponent' won, it means guest won.
+          const isGuestWinner = netState.gameOver.winner === 'opponent';
+          const guestWinner = isGuestWinner ? 'player' : 'opponent';
+          
           if (isGuestWinner) {
             soundEngine.playWin();
           } else {
@@ -1082,7 +1085,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             targetScore: netState.score ? netState.score.targetScore : gameStateRef.current.baseTargetScore,
           };
           gameStateRef.current.currentScore = finalGuestScore;
-          onGameOver(netState.gameOver.winner, netState.gameOver.stats, finalGuestScore);
+          
+          // Swap stats perspective for guest
+          const guestStats: GameStats = {
+            ...netState.gameOver.stats,
+            winner: guestWinner
+          };
+          
+          onGameOver(guestWinner, guestStats, finalGuestScore);
         }
 
         // 2. Sync Balls with soft blending to eliminate stutter
@@ -1101,6 +1111,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               if (dist < 45) {
                 curX = lerp(existing.x, targetX, 0.75);
                 curY = lerp(existing.y, targetY, 0.75);
+              }
+              
+              // Audio Cues
+              const newLastHitter = nb.lastHitter === 'player' ? 'opponent' : nb.lastHitter === 'opponent' ? 'player' : 'none';
+              if (existing.lastHitter !== newLastHitter && newLastHitter !== 'none') {
+                if (nb.isSmash) soundEngine.playSmashHit();
+                else soundEngine.playPaddleHit(newLastHitter === 'player', 0);
+              }
+              if (!existing.deflectedBySensor && nb.deflectedBySensor) {
+                soundEngine.playSensorHit();
+              }
+              // Wall bounce inference
+              if (Math.sign(existing.vx) !== Math.sign(targetVx) && Math.abs(curX - w/2) > w/3) {
+                soundEngine.playWallBounce();
               }
             }
 
@@ -1172,6 +1196,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
         // 6. Power-ups
         if (netState.powerUps) {
+          if (powerUpsRef.current.length > netState.powerUps.length) {
+             soundEngine.playPowerUpCollect(false);
+          }
           powerUpsRef.current = netState.powerUps.map((np) => ({
             id: np.id,
             type: np.type,
@@ -1193,8 +1220,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             netState.score.player !== gameStateRef.current.currentScore.opponent ||
             netState.score.opponent !== gameStateRef.current.currentScore.player
           ) {
+            const didPlayerScore = netState.score.opponent > gameStateRef.current.currentScore.player;
             gameStateRef.current.currentScore.opponent = netState.score.player;
             gameStateRef.current.currentScore.player = netState.score.opponent;
+            soundEngine.playScore(didPlayerScore);
             onScoreUpdate(
               {
                 player: netState.score.opponent,
@@ -1212,6 +1241,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           gameStateRef.current.roundBanner = netState.roundBanner;
         }
         if (netState.toast) {
+          if (!powerUpToastRef.current || powerUpToastRef.current.title !== netState.toast.title) {
+            if (netState.toast.icon === '🟨' || netState.toast.icon === '🟥') {
+               soundEngine.playWhistle(netState.toast.icon === '🟥');
+            } else {
+               soundEngine.playPowerUpSpawn();
+            }
+          }
           powerUpToastRef.current = {
             title: netState.toast.title,
             subtitle: netState.toast.subtitle,
@@ -1463,8 +1499,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             opponent.vy = 0;
           } else if (isMultiplayer && multiplayerRole === 'host') {
             // Multiplayer Host: guest paddle position is driven by guest player input
-            opponent.x = lerp(opponent.x, opponent.targetX, 0.35);
-            opponent.y = lerp(opponent.y, opponent.targetY, 0.35);
+            // Use very high lerp (0.85) to eliminate paddle lag while preserving velocity calculations
+            opponent.x = lerp(opponent.x, opponent.targetX, 0.85);
+            opponent.y = lerp(opponent.y, opponent.targetY, 0.85);
             opponent.prevX = prevOppX;
             opponent.prevY = prevOppY;
             opponent.vx = (opponent.x - prevOppX) / Math.max(dt, 0.001);
