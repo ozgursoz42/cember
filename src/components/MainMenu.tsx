@@ -77,28 +77,28 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const unlockedBadges = getUnlockedBadges();
 
   return (
-    <div className="relative w-full h-full flex flex-col justify-between items-center p-4 max-w-md mx-auto select-none overflow-y-auto z-20">
+    <div className="relative w-full h-full flex flex-col justify-between items-center p-3 sm:p-4 max-w-md mx-auto select-none overflow-y-auto overflow-x-hidden z-20">
       {/* Top Bar: Mute, Gyro, Fullscreen, Badges, Power-ups Info & Best Record */}
-      <div className="w-full flex items-center justify-between pt-1">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs font-semibold text-amber-400">
+      <div className="w-full flex items-center justify-between pt-0.5 sm:pt-1 shrink-0">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-[11px] sm:text-xs font-semibold text-amber-400">
           <Trophy className="w-3.5 h-3.5" />
           <span>BEST: {bestCombo}x</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5">
           {/* Gyro quick toggle */}
           <button
             id="menu-gyro-btn"
             onClick={handleToggleGyro}
             aria-label="Jiroskop Eğim Kontrolü"
-            className={`p-2 rounded-full border transition active:scale-95 flex items-center gap-1 text-xs font-bold ${
+            className={`p-1.5 sm:p-2 rounded-full border transition active:scale-95 flex items-center gap-1 text-xs font-bold ${
               gyroState.isEnabled
                 ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
                 : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
             }`}
             title={gyroState.isEnabled ? 'Jiroskop: Açık' : 'Jiroskop: Kapalı'}
           >
-            <Smartphone className={`w-4 h-4 ${gyroState.isEnabled ? 'rotate-12 animate-pulse' : ''}`} />
+            <Smartphone className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${gyroState.isEnabled ? 'rotate-12 animate-pulse' : ''}`} />
           </button>
 
           {/* Fullscreen button */}
@@ -106,20 +106,20 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             id="menu-fullscreen-btn"
             onClick={handleToggleFs}
             aria-label="Tam Ekran"
-            className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95"
+            className="p-1.5 sm:p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95"
             title="Tam Ekran Modu"
           >
-            {inFullscreen ? <Minimize2 className="w-4 h-4 text-cyan-400" /> : <Maximize2 className="w-4 h-4" />}
+            {inFullscreen ? <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" /> : <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
           </button>
 
           <button
             id="badges-modal-btn"
             onClick={() => setShowBadgesModal(true)}
             aria-label="Rozetler ve Başarılar"
-            className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-amber-400 hover:text-amber-300 hover:border-slate-700 transition active:scale-95 flex items-center gap-1 text-xs font-bold"
+            className="p-1.5 sm:p-2 rounded-full bg-slate-900/80 border border-slate-800 text-amber-400 hover:text-amber-300 hover:border-slate-700 transition active:scale-95 flex items-center gap-1 text-xs font-bold"
             title="Kazanılan Rozetler"
           >
-            <Award className="w-4 h-4" />
+            <Award className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="text-[11px] hidden sm:inline">Rozetler</span>
           </button>
 
@@ -130,21 +130,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               setShowShopModal(true);
             }}
             aria-label="Mağaza"
-            className="p-2 rounded-full bg-gradient-to-r from-amber-500/20 to-amber-400/30 border border-amber-400/60 text-amber-300 hover:text-white transition active:scale-95 flex items-center gap-1 text-xs font-bold shadow-[0_0_10px_rgba(245,158,11,0.25)]"
+            className="p-1.5 sm:p-2 rounded-full bg-gradient-to-r from-amber-500/20 to-amber-400/30 border border-amber-400/60 text-amber-300 hover:text-white transition active:scale-95 flex items-center gap-1 text-xs font-bold shadow-[0_0_10px_rgba(245,158,11,0.25)]"
             title="Arena Mağazası"
           >
-            <ShoppingBag className="w-4 h-4 text-amber-400" />
-            <span className="text-[11px] font-black hidden sm:inline">MAĞAZA</span>
+            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
+            <span className="text-[11px] font-black hidden sm:inline">Mağaza</span>
           </button>
 
           <button
             id="power-up-guide-btn"
             onClick={() => setShowPowerUpGuide(true)}
             aria-label="Güç öğeleri rehberi"
-            className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-cyan-400 hover:text-white hover:border-slate-700 transition active:scale-95 flex items-center gap-1 text-xs font-bold"
+            className="p-1.5 sm:p-2 rounded-full bg-slate-900/80 border border-slate-800 text-cyan-400 hover:text-white hover:border-slate-700 transition active:scale-95 flex items-center gap-1 text-xs font-bold"
             title="Arena Güçleri"
           >
-            <Zap className="w-4 h-4 text-amber-400" />
+            <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
             <span className="text-[11px] hidden sm:inline">Güçler</span>
           </button>
 
@@ -152,24 +152,24 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             id="sound-toggle-btn"
             onClick={onToggleMute}
             aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
-            className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95"
+            className="p-1.5 sm:p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95"
           >
-            {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />}
           </button>
         </div>
       </div>
 
       {/* Gyro Toast Message */}
       {gyroMessage && (
-        <div className="w-full mt-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/60 text-cyan-300 text-xs font-bold text-center shadow-lg animate-in fade-in duration-150">
+        <div className="w-full mt-1.5 px-3 py-1 rounded-xl bg-slate-900/95 border border-cyan-500/60 text-cyan-300 text-xs font-bold text-center shadow-lg animate-in fade-in duration-150">
           {gyroMessage}
         </div>
       )}
 
       {/* Center Hero: Animated ÇEMBER Logo & Visual Motif */}
-      <div className="flex flex-col items-center justify-center my-auto py-2">
+      <div className="flex flex-col items-center justify-center my-auto py-1 sm:py-2">
         {/* Animated Sensor Emblem */}
-        <div className="relative w-24 h-24 flex items-center justify-center mb-3">
+        <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center mb-1.5 sm:mb-2">
           {/* Outer Pulsing Glow */}
           <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-500/20 via-amber-400/20 to-rose-500/20 blur-xl animate-pulse" />
           
@@ -183,31 +183,31 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
 
           {/* Inner Glowing Center Çember */}
-          <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.6)]">
-            <div className="w-6 h-6 rounded-full bg-slate-950/80 flex items-center justify-center border border-amber-300/60">
-              <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_6px_#ffffff]" />
+          <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.6)]">
+            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-950/80 flex items-center justify-center border border-amber-300/60">
+              <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-white shadow-[0_0_6px_#ffffff]" />
             </div>
           </div>
         </div>
 
         {/* Title */}
-        <h1 className="text-4xl font-extrabold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-amber-300 to-rose-400 drop-shadow-sm">
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-amber-300 to-rose-400 drop-shadow-sm">
           ÇEMBER
         </h1>
-        <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.25em] text-slate-400">
+        <p className="mt-0.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.25em] text-slate-400">
           The Kinetic Sensor Arena
         </p>
 
         {/* 5-Tier Difficulty Selector (Easiest, Easy, Casual, Pro, Chaos) */}
-        <div className="mt-5 w-full flex flex-col items-center">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+        <div className="mt-3 sm:mt-4 w-full flex flex-col items-center">
+          <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
             ZORLUK SEVİYESİ
           </span>
-          <div className="flex items-center gap-1 p-1 bg-slate-900/90 rounded-2xl border border-slate-800/80 max-w-full overflow-x-auto">
+          <div className="flex items-center justify-center gap-1 p-1 bg-slate-900/90 rounded-2xl border border-slate-800/80 w-full max-w-full overflow-x-hidden flex-wrap sm:flex-nowrap">
             <button
               id="difficulty-easiest-btn"
               onClick={() => setDifficulty('easiest')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+              className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all ${
                 difficulty === 'easiest'
                   ? 'bg-sky-400 text-slate-950 shadow-md scale-105'
                   : 'text-slate-400 hover:text-white'
@@ -219,7 +219,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               id="difficulty-easy-btn"
               onClick={() => setDifficulty('easy')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+              className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all ${
                 difficulty === 'easy'
                   ? 'bg-teal-400 text-slate-950 shadow-md scale-105'
                   : 'text-slate-400 hover:text-white'
@@ -231,7 +231,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               id="difficulty-casual-btn"
               onClick={() => setDifficulty('casual')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+              className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all ${
                 difficulty === 'casual'
                   ? 'bg-emerald-400 text-slate-950 shadow-md scale-105'
                   : 'text-slate-400 hover:text-white'
@@ -243,7 +243,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               id="difficulty-pro-btn"
               onClick={() => setDifficulty('pro')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+              className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all ${
                 difficulty === 'pro'
                   ? 'bg-amber-400 text-slate-950 shadow-md scale-105'
                   : 'text-slate-400 hover:text-white'
@@ -255,7 +255,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               id="difficulty-chaos-btn"
               onClick={() => setDifficulty('chaos')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-black transition-all ${
+              className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all ${
                 difficulty === 'chaos'
                   ? 'bg-rose-500 text-white shadow-md scale-105'
                   : 'text-slate-400 hover:text-white'
@@ -369,7 +369,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </div>
             <div className="text-left">
               <div className="text-xs font-black leading-tight flex items-center gap-1.5">
-                <span>ARENA MAĞAZASI 🛒</span>
+                <span>Arena Mağazası 🛒</span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-950 text-amber-300 font-black">YILDIZ HARCA</span>
               </div>
               <div className="text-[10px] font-extrabold text-slate-900/90">

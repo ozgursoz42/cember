@@ -156,15 +156,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const playerSkin = PLAYER_PADDLE_SKINS.find((s) => s.id === shop.equippedPlayerSkinId);
     if (playerSkin) {
       playerPaddleRef.current.color = playerSkin.color;
-      playerPaddleRef.current.secondaryColor = playerSkin.secondaryColor;
+      playerPaddleRef.current.secondaryColor = undefined;
       playerPaddleRef.current.glowColor = playerSkin.glowColor;
     } else if (playerTeam) {
       playerPaddleRef.current.color = playerTeam.paddleColor;
-      playerPaddleRef.current.secondaryColor = playerTeam.secondaryColor || playerTeam.accentColor;
+      playerPaddleRef.current.secondaryColor = undefined;
       playerPaddleRef.current.glowColor = playerTeam.glowColor;
     } else {
       playerPaddleRef.current.color = '#06b6d4';
-      playerPaddleRef.current.secondaryColor = '#0284c7';
+      playerPaddleRef.current.secondaryColor = undefined;
       playerPaddleRef.current.glowColor = '#22d3ee';
     }
 
@@ -172,19 +172,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const oppSkin = OPPONENT_PADDLE_SKINS.find((s) => s.id === shop.equippedOpponentSkinId);
     if (oppSkin) {
       opponentPaddleRef.current.color = oppSkin.color;
-      opponentPaddleRef.current.secondaryColor = oppSkin.secondaryColor || oppSkin.color;
+      opponentPaddleRef.current.secondaryColor = undefined;
       opponentPaddleRef.current.glowColor = oppSkin.glowColor;
     } else if (opponentTeam) {
       opponentPaddleRef.current.color = opponentTeam.paddleColor;
-      opponentPaddleRef.current.secondaryColor = opponentTeam.secondaryColor || opponentTeam.accentColor;
+      opponentPaddleRef.current.secondaryColor = undefined;
       opponentPaddleRef.current.glowColor = opponentTeam.glowColor;
     } else if (stage) {
       opponentPaddleRef.current.color = stage.opponentPaddleColor || '#f43f5e';
-      opponentPaddleRef.current.secondaryColor = stage.opponentPaddleColor ? undefined : '#e11d48';
+      opponentPaddleRef.current.secondaryColor = undefined;
       opponentPaddleRef.current.glowColor = stage.opponentGlowColor || '#fb7185';
     } else {
       opponentPaddleRef.current.color = '#f43f5e';
-      opponentPaddleRef.current.secondaryColor = '#e11d48';
+      opponentPaddleRef.current.secondaryColor = undefined;
       opponentPaddleRef.current.glowColor = '#fb7185';
     }
   }, [playerTeam, opponentTeam, stage]);
@@ -548,6 +548,174 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     lastReportedStatusKeyRef.current = '';
     powerUpToastRef.current = null;
   }, [emitCardState, onActivePowerUpsChange]);
+
+  const pendingSoundEventsRef = useRef<string[]>([]);
+
+  const triggerSoundEvent = useCallback((event: string, numVal?: number) => {
+    soundEngine.resume();
+    switch (event) {
+      case 'paddle_hit_player':
+        soundEngine.playPaddleHit(true, numVal || 0);
+        break;
+      case 'paddle_hit_opp':
+        soundEngine.playPaddleHit(false, numVal || 0);
+        break;
+      case 'smash_hit':
+        soundEngine.playSmashHit();
+        break;
+      case 'sensor_hit':
+        soundEngine.playSensorHit();
+        break;
+      case 'wall_bounce':
+        soundEngine.playWallBounce();
+        break;
+      case 'score_player':
+        soundEngine.playScore(true);
+        break;
+      case 'score_opp':
+        soundEngine.playScore(false);
+        break;
+      case 'double_score_player':
+        soundEngine.playDoubleScore(true);
+        break;
+      case 'double_score_opp':
+        soundEngine.playDoubleScore(false);
+        break;
+      case 'goalie_save':
+        soundEngine.playGoalieSave();
+        break;
+      case 'ice_wall_hit':
+        soundEngine.playIceWallHit();
+        break;
+      case 'ice_shatter':
+        soundEngine.playIceShatter();
+        break;
+      case 'circle_split':
+        soundEngine.playCircleSplit();
+        break;
+      case 'powerup_collect_good':
+        soundEngine.playPowerUpCollect(false);
+        break;
+      case 'powerup_collect_bad':
+        soundEngine.playPowerUpCollect(true);
+        break;
+      case 'powerup_spawn':
+        soundEngine.playPowerUpSpawn();
+        break;
+      case 'whistle_yellow':
+        soundEngine.playWhistle(false);
+        break;
+      case 'whistle_red':
+        soundEngine.playWhistle(true);
+        break;
+      case 'freeze':
+        soundEngine.playFreezeSound();
+        break;
+      case 'rocket':
+        soundEngine.playRocketBoost();
+        break;
+      case 'mega_paddle':
+        soundEngine.playMegaPaddle();
+        break;
+      case 'fireball':
+        soundEngine.playFireballSound();
+        break;
+      case 'slowmo':
+        soundEngine.playSlowMoSound();
+        break;
+      case 'split_ball':
+        soundEngine.playSplitBall();
+        break;
+      case 'multi_ball':
+        soundEngine.playMultiBall();
+        break;
+    }
+
+    if (isMultiplayer && multiplayerRole === 'host') {
+      pendingSoundEventsRef.current.push(event);
+    }
+  }, [isMultiplayer, multiplayerRole]);
+
+  const handleGuestNetworkSound = useCallback((event: string) => {
+    soundEngine.resume();
+    switch (event) {
+      case 'paddle_hit_player':
+        soundEngine.playPaddleHit(false);
+        break;
+      case 'paddle_hit_opp':
+        soundEngine.playPaddleHit(true);
+        break;
+      case 'smash_hit':
+        soundEngine.playSmashHit();
+        break;
+      case 'sensor_hit':
+        soundEngine.playSensorHit();
+        break;
+      case 'wall_bounce':
+        soundEngine.playWallBounce();
+        break;
+      case 'score_player':
+        soundEngine.playScore(false);
+        break;
+      case 'score_opp':
+        soundEngine.playScore(true);
+        break;
+      case 'double_score_player':
+        soundEngine.playDoubleScore(false);
+        break;
+      case 'double_score_opp':
+        soundEngine.playDoubleScore(true);
+        break;
+      case 'goalie_save':
+        soundEngine.playGoalieSave();
+        break;
+      case 'ice_wall_hit':
+        soundEngine.playIceWallHit();
+        break;
+      case 'ice_shatter':
+        soundEngine.playIceShatter();
+        break;
+      case 'circle_split':
+        soundEngine.playCircleSplit();
+        break;
+      case 'powerup_collect_good':
+        soundEngine.playPowerUpCollect(false);
+        break;
+      case 'powerup_collect_bad':
+        soundEngine.playPowerUpCollect(true);
+        break;
+      case 'powerup_spawn':
+        soundEngine.playPowerUpSpawn();
+        break;
+      case 'whistle_yellow':
+        soundEngine.playWhistle(false);
+        break;
+      case 'whistle_red':
+        soundEngine.playWhistle(true);
+        break;
+      case 'freeze':
+        soundEngine.playFreezeSound();
+        break;
+      case 'rocket':
+        soundEngine.playRocketBoost();
+        break;
+      case 'mega_paddle':
+        soundEngine.playMegaPaddle();
+        break;
+      case 'fireball':
+        soundEngine.playFireballSound();
+        break;
+      case 'slowmo':
+        soundEngine.playSlowMoSound();
+        break;
+      case 'split_ball':
+        soundEngine.playSplitBall();
+        break;
+      case 'multi_ball':
+        soundEngine.playMultiBall();
+        break;
+    }
+  }, []);
 
   // Apply collected power-up to game entities (player or opponent)
   const applyPowerUp = (p: PowerUpItem, collector: 'player' | 'opponent' = 'player') => {
@@ -1173,7 +1341,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
 
-        // 1. Handle Game Over received from Host
+        // 1. Play incoming sound events from Host
+        if (netState.soundEvents && netState.soundEvents.length > 0) {
+          netState.soundEvents.forEach((evt) => handleGuestNetworkSound(evt));
+        } else if (netState.soundEvent) {
+          handleGuestNetworkSound(netState.soundEvent);
+        }
+
+        // 2. Handle Game Over received from Host
         if (netState.gameOver && !hasTriggeredGameOverRef.current) {
           hasTriggeredGameOverRef.current = true;
           gameStateRef.current.isRunning = false;
@@ -1192,7 +1367,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           onGameOver(netState.gameOver.winner, netState.gameOver.stats, finalGuestScore);
         }
 
-        // 2. Sync Balls with soft blending to eliminate stutter
+        // 3. Sync Balls with continuous predictive blending (0ms lag)
         if (netState.balls && netState.balls.length > 0) {
           ballsRef.current = netState.balls.map((nb, idx) => {
             const existing = ballsRef.current[idx];
@@ -1205,9 +1380,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             let curY = targetY;
             if (existing) {
               const dist = Math.hypot(existing.x - targetX, existing.y - targetY);
-              if (dist < 45) {
-                curX = lerp(existing.x, targetX, 0.75);
-                curY = lerp(existing.y, targetY, 0.75);
+              // Soft lerp if close, snap if reset or goal
+              if (dist < 60) {
+                curX = lerp(existing.x, targetX, 0.35);
+                curY = lerp(existing.y, targetY, 0.35);
               }
             }
 
@@ -1233,7 +1409,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ballRef.current = ballsRef.current[0];
         }
 
-        // 3. Host paddle is opponent for guest
+        // 4. Host paddle is opponent for guest
         const opp = opponentPaddleRef.current;
         opp.targetX = (1 - netState.hostPaddle.x) * w;
         opp.targetY = (1 - netState.hostPaddle.y) * h;
@@ -1245,7 +1421,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         opp.isRocketPowered = netState.hostPaddle.isRocketPowered;
         opp.isFiery = netState.hostPaddle.isFiery;
 
-        // 4. Guest paddle is player for guest (client-authoritative smooth prediction)
+        // 5. Guest paddle is player for guest (client-authoritative smooth prediction)
         const ply = playerPaddleRef.current;
         ply.width = (netState.guestPaddle.width / 360) * w;
         ply.isFrozen = netState.guestPaddle.isFrozen;
@@ -1261,7 +1437,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ply.y = lerp(ply.y, srvY, 0.35);
         }
 
-        // 5. Sensors
+        // 6. Sensors
         if (netState.sensors) {
           sensorsRef.current = netState.sensors.map((ns, idx) => {
             const existing = sensorsRef.current[idx];
@@ -1277,7 +1453,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           });
         }
 
-        // 6. Power-ups
+        // 7. Power-ups
         if (netState.powerUps) {
           powerUpsRef.current = netState.powerUps.map((np) => ({
             id: np.id,
@@ -1294,7 +1470,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }));
         }
 
-        // 7. Scores
+        // 8. Scores
         if (netState.score) {
           if (
             netState.score.player !== gameStateRef.current.currentScore.opponent ||
@@ -1313,7 +1489,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
         }
 
-        // 8. Round reset & toast
+        // 9. Round reset & toast
         gameStateRef.current.isRoundResetting = netState.isRoundResetting;
         if (netState.roundBanner) {
           gameStateRef.current.roundBanner = netState.roundBanner;
@@ -1330,7 +1506,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       });
       return unsub;
     }
-  }, [isMultiplayer, multiplayerManager, multiplayerRole, onGameOver, onScoreUpdate]);
+  }, [handleGuestNetworkSound, isMultiplayer, multiplayerManager, multiplayerRole, onGameOver, onScoreUpdate]);
 
   // Main 60FPS Game Loop
   useEffect(() => {
@@ -1877,7 +2053,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             const flashCol = isHarmful ? '#ef4444' : '#10b981';
             spawnHitParticles(w - 12, spawnY, flashCol, 14, 1.3, 'spark');
             spawnShockwave(w - 12, spawnY, flashCol, 40);
-            soundEngine.playPowerUpSpawn();
+            triggerSoundEvent('powerup_spawn');
           }
 
           // --- POWER-UP PHYSICS & SYMMETRICAL PICKUP DETECTION ---
@@ -1972,7 +2148,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
             if (collectedBy) {
               applyPowerUp(p, collectedBy);
-              soundEngine.playPowerUpCollect(p.isHarmful);
+              triggerSoundEvent(p.isHarmful ? 'powerup_collect_bad' : 'powerup_collect_good');
 
               const burstColor = collectedBy === 'player' ? (p.isHarmful ? '#ef4444' : '#10b981') : (p.isHarmful ? '#10b981' : '#f43f5e');
               spawnHitParticles(p.x, p.y, burstColor, 22, 1.7);
@@ -2000,12 +2176,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               if (currentBall.x - currentBall.radius < 8) {
                 currentBall.x = 8 + currentBall.radius;
                 currentBall.vx = Math.abs(currentBall.vx);
-                soundEngine.playWallBounce();
+                triggerSoundEvent('wall_bounce');
                 spawnHitParticles(currentBall.x, currentBall.y, '#94a3b8', 5, 0.7);
               } else if (currentBall.x + currentBall.radius > w - 8) {
                 currentBall.x = w - 8 - currentBall.radius;
                 currentBall.vx = -Math.abs(currentBall.vx);
-                soundEngine.playWallBounce();
+                triggerSoundEvent('wall_bounce');
                 spawnHitParticles(currentBall.x, currentBall.y, '#94a3b8', 5, 0.7);
               }
 
@@ -2019,7 +2195,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                       sensor.scorchTimer = 5;
                       spawnHitParticles(sensor.x, sensor.y, '#f97316', 22, 2.0, 'flame');
                       spawnHitParticles(sensor.x, sensor.y, '#475569', 14, 1.2, 'smoke');
-                      soundEngine.playFireballSound();
+                      triggerSoundEvent('fireball');
                     }
                   }
                 });
@@ -2034,7 +2210,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   state.sensorHitsCount++;
                   state.screenShake = 8;
 
-                  soundEngine.playSensorHit();
+                  triggerSoundEvent('sensor_hit');
                   spawnHitParticles(currentBall.x, currentBall.y, '#f59e0b', 22, 1.8);
                   spawnShockwave(sensor.x, sensor.y, '#f59e0b', 90);
 
@@ -2063,17 +2239,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   const isHardStrike = playerHit.isSmash || player.isRocketPowered || player.vy < -60 || currentBall.speed >= 620;
 
                   if (player.isRocketPowered) {
-                    soundEngine.playRocketBoost();
+                    triggerSoundEvent('rocket');
                     spawnHitParticles(currentBall.x, currentBall.y, '#06b6d4', 28, 2.4, 'flame');
                     spawnShockwave(player.x, player.y, '#06b6d4', 75);
                     state.screenShake = 10;
                   } else if (playerHit.isSmash) {
-                    soundEngine.playSmashHit();
+                    triggerSoundEvent('smash_hit');
                     spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 24, 2.2);
                     spawnShockwave(player.x, player.y, '#38bdf8', 70);
                     state.screenShake = 8;
                   } else {
-                    soundEngine.playPaddleHit(true, state.comboCount);
+                    triggerSoundEvent('paddle_hit_player', state.comboCount);
                     soundEngine.playCombo(state.comboCount);
                     spawnHitParticles(currentBall.x, currentBall.y, '#22d3ee', 12, 1.2);
                     spawnShockwave(player.x, player.y, '#22d3ee', 45);
@@ -2126,7 +2302,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   state.rallyCount++;
                   state.totalVolleysCount++;
                   onRallyChange(state.rallyCount);
-                  soundEngine.playGoalieSave();
+                  triggerSoundEvent('goalie_save');
                   spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 18, 1.6);
                   spawnShockwave(pGoalie.x, pGoalie.y, '#06b6d4', 55);
                 }
@@ -2151,7 +2327,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   state.rallyCount++;
                   state.totalVolleysCount++;
                   onRallyChange(state.rallyCount);
-                  soundEngine.playGoalieSave();
+                  triggerSoundEvent('goalie_save');
                   spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 18, 1.6);
                   spawnShockwave(oGoalie.x, oGoalie.y, '#f43f5e', 55);
                 }
@@ -2166,7 +2342,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   state.rallyCount++;
                   state.totalVolleysCount++;
                   onRallyChange(state.rallyCount);
-                  soundEngine.playPaddleHit(true, state.comboCount);
+                  triggerSoundEvent('paddle_hit_player', state.comboCount);
                   spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 14, 1.4);
                   spawnShockwave(player.x, player.y + mp.yOffset, '#38bdf8', 50);
                 }
@@ -2184,17 +2360,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                   const isOppHardStrike = oppHit.isSmash || opponent.isRocketPowered || opponent.vy > 60 || currentBall.speed >= 620;
 
                   if (opponent.isRocketPowered) {
-                    soundEngine.playRocketBoost();
+                    triggerSoundEvent('rocket');
                     spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 28, 2.4, 'flame');
                     spawnShockwave(opponent.x, opponent.y, '#f43f5e', 75);
                     state.screenShake = 10;
                   } else if (oppHit.isSmash) {
-                    soundEngine.playSmashHit();
+                    triggerSoundEvent('smash_hit');
                     spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 24, 2.2);
                     spawnShockwave(opponent.x, opponent.y, '#f43f5e', 70);
                     state.screenShake = 8;
                   } else {
-                    soundEngine.playPaddleHit(false, 0);
+                    triggerSoundEvent('paddle_hit_opp');
                     spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 12, 1.2);
                     spawnShockwave(opponent.x, opponent.y, '#f43f5e', 45);
                     state.screenShake = 4;
@@ -2209,12 +2385,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                       opponent.lastHardStrikeTime = 0;
 
                       if (opponent.yellowCards === 1) {
-                        soundEngine.playWhistle(false);
+                        triggerSoundEvent('whistle_yellow');
                         triggerToast('🟨 SARI KART (RAKİP)!', 'Rakip 3 Saniye İçinde 2 Kez Sert Vurdu!', '#facc15', '🟨');
                         emitCardState();
                       } else if (opponent.yellowCards >= 2) {
                         opponent.isEjected = true;
-                        soundEngine.playWhistle(true);
+                        triggerSoundEvent('whistle_red');
                         triggerToast('🟥 KIRMIZI KART (RAKİP)!', 'Rakip 2. Sarı Kartı Gördü ve Atıldı!', '#ef4444', '🟥');
                         emitCardState();
                       }
@@ -2234,7 +2410,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 currentBall.lastHitter = 'player';
                 pIceWall.hitFlash = 1.0;
                 state.screenShake = 6;
-                soundEngine.playIceWallHit();
+                triggerSoundEvent('ice_wall_hit');
                 spawnHitParticles(currentBall.x, pIceWall.y, '#93c5fd', 20, 1.8, 'ice');
                 spawnShockwave(currentBall.x, pIceWall.y, '#38bdf8', 60);
               }
@@ -2248,7 +2424,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 currentBall.lastHitter = 'opponent';
                 oIceWall.hitFlash = 1.0;
                 state.screenShake = 6;
-                soundEngine.playIceWallHit();
+                triggerSoundEvent('ice_wall_hit');
                 spawnHitParticles(currentBall.x, oIceWall.y + oIceWall.height, '#93c5fd', 20, 1.8, 'ice');
                 spawnShockwave(currentBall.x, oIceWall.y + oIceWall.height, '#f43f5e', 60);
               }
@@ -2321,12 +2497,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 onRallyChange(0);
 
                 if (isSensorDouble) {
-                  soundEngine.playDoubleScore(true);
+                  triggerSoundEvent('double_score_player');
                   spawnHitParticles(w / 2, 20, '#f59e0b', 45, 2.5);
                   spawnHitParticles(w / 2, 20, '#38bdf8', 30, 2.2);
                   spawnShockwave(w / 2, 20, '#f59e0b', 140);
                 } else {
-                  soundEngine.playScore(true);
+                  triggerSoundEvent('score_player');
                   spawnHitParticles(w / 2, 20, '#22d3ee', 35, 2.2);
                   spawnShockwave(w / 2, 20, '#22d3ee', 120);
                 }
@@ -2444,11 +2620,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 onRallyChange(0);
 
                 if (isSensorDouble) {
-                  soundEngine.playDoubleScore(false);
+                  triggerSoundEvent('double_score_opp');
                   spawnHitParticles(w / 2, h - 20, '#f59e0b', 40, 2.4);
                   spawnShockwave(w / 2, h - 20, '#f59e0b', 130);
                 } else {
-                  soundEngine.playScore(false);
+                  triggerSoundEvent('score_opp');
                   spawnHitParticles(w / 2, h - 20, '#f43f5e', 35, 2.2);
                   spawnShockwave(w / 2, h - 20, '#f43f5e', 120);
                 }
@@ -2683,25 +2859,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             }
           }
 
-          // Update particles
-          for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-            const p = particlesRef.current[i];
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.alpha -= p.decay * dt;
-            if (p.alpha <= 0) {
-              particlesRef.current.splice(i, 1);
-            }
-          }
+        }
 
-          // Update shockwaves
-          for (let i = shockwavesRef.current.length - 1; i >= 0; i--) {
-            const sw = shockwavesRef.current[i];
-            sw.radius += (sw.maxRadius - sw.radius) * 12 * dt;
-            sw.alpha -= 2.2 * dt;
-            if (sw.alpha <= 0) {
-              shockwavesRef.current.splice(i, 1);
-            }
+        // Update particles for both host and guest
+        for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+          const p = particlesRef.current[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.alpha -= p.decay * dt;
+          if (p.alpha <= 0) {
+            particlesRef.current.splice(i, 1);
+          }
+        }
+
+        // Update shockwaves for both host and guest
+        for (let i = shockwavesRef.current.length - 1; i >= 0; i--) {
+          const sw = shockwavesRef.current[i];
+          sw.radius += (sw.maxRadius - sw.radius) * 12 * dt;
+          sw.alpha -= 2.2 * dt;
+          if (sw.alpha <= 0) {
+            shockwavesRef.current.splice(i, 1);
           }
         }
 
@@ -2709,6 +2886,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (isMultiplayer && multiplayerRole === 'host' && multiplayerManager) {
           const curPlayer = playerPaddleRef.current;
           const curOpponent = opponentPaddleRef.current;
+          const queuedSoundEvents = [...pendingSoundEventsRef.current];
+          pendingSoundEventsRef.current = [];
+
           multiplayerManager.sendGameState({
             t: currentTime,
             balls: ballsRef.current.map((b) => ({
@@ -2771,6 +2951,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             guestIceWallActive: opponentIceWallRef.current.active,
             isRoundResetting: state.isRoundResetting,
             roundBanner: state.roundBanner,
+            soundEvents: queuedSoundEvents.length > 0 ? queuedSoundEvents : undefined,
             toast: powerUpToastRef.current
               ? {
                   title: powerUpToastRef.current.title,
@@ -3357,13 +3538,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillStyle = opp.hitFlash > 0.1 ? '#ffffff' : megaGrad;
         } else if (opp.hitFlash > 0.1) {
           ctx.fillStyle = '#ffffff';
-        } else if (opp.secondaryColor) {
-          const oppGrad = ctx.createLinearGradient(opp.x - opp.width / 2, 0, opp.x + opp.width / 2, 0);
-          oppGrad.addColorStop(0, opp.color);
-          oppGrad.addColorStop(0.495, opp.color);
-          oppGrad.addColorStop(0.505, opp.secondaryColor);
-          oppGrad.addColorStop(1, opp.secondaryColor);
-          ctx.fillStyle = oppGrad;
         } else {
           ctx.fillStyle = opp.color;
         }
@@ -3377,15 +3551,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.strokeStyle = isOppMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
         ctx.lineWidth = 1.2;
         ctx.stroke();
-
-        if (!isOppMega && opp.secondaryColor && opp.hitFlash <= 0.1) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(opp.x, opp.y - opp.height / 2);
-          ctx.lineTo(opp.x, opp.y + opp.height / 2);
-          ctx.stroke();
-        }
 
         // Mega Paddle Crown Indicator for Opponent
         if (isOppMega) {
@@ -3551,13 +3716,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ctx.fillStyle = ply.hitFlash > 0.1 ? '#ffffff' : megaGrad;
         } else if (ply.hitFlash > 0.1) {
           ctx.fillStyle = '#ffffff';
-        } else if (ply.secondaryColor) {
-          const plyGrad = ctx.createLinearGradient(ply.x - ply.width / 2, 0, ply.x + ply.width / 2, 0);
-          plyGrad.addColorStop(0, ply.color);
-          plyGrad.addColorStop(0.495, ply.color);
-          plyGrad.addColorStop(0.505, ply.secondaryColor);
-          plyGrad.addColorStop(1, ply.secondaryColor);
-          ctx.fillStyle = plyGrad;
         } else {
           ctx.fillStyle = ply.color;
         }
@@ -3571,15 +3729,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.strokeStyle = isMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
         ctx.lineWidth = 1.2;
         ctx.stroke();
-
-        if (!isMega && ply.secondaryColor && ply.hitFlash <= 0.1) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(ply.x, ply.y - ply.height / 2);
-          ctx.lineTo(ply.x, ply.y + ply.height / 2);
-          ctx.stroke();
-        }
 
         // Mega Paddle Crown Indicator
         if (isMega) {
@@ -3874,33 +4023,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const isPlayerGoal = bannerText.includes('YOU') || (bannerText.includes('GOL') && !bannerText.includes('RAKİP') && !bannerText.includes('KALENE'));
 
         // Spawn gold & neon sparkles burst if empty
-        if (goalSparklesRef.current.length < 15) {
-          for (let i = 0; i < 45; i++) {
+        if (goalSparklesRef.current.length < 20) {
+          for (let i = 0; i < 65; i++) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = 15 + Math.random() * 160;
+            const dist = 10 + Math.random() * 180;
             goalSparklesRef.current.push({
               x: w / 2 + Math.cos(angle) * dist,
               y: h / 2 + Math.sin(angle) * dist,
-              vx: (Math.random() - 0.5) * 160,
-              vy: (Math.random() - 0.5) * 160,
-              size: 2 + Math.random() * 6,
-              alpha: 0.9 + Math.random() * 0.1,
-              color: isDouble ? '#f59e0b' : isPlayerGoal ? '#38bdf8' : '#f43f5e',
-              life: 1.0,
+              vx: (Math.random() - 0.5) * 220,
+              vy: (Math.random() - 0.5) * 220,
+              size: 2.5 + Math.random() * 7,
+              alpha: 0.95 + Math.random() * 0.05,
+              color: isDouble ? '#facc15' : isPlayerGoal ? '#38bdf8' : '#f43f5e',
+              life: 1.1,
             });
           }
         }
 
-        // Update and draw sparkles
+        // Update and draw sparkles with star glow
         goalSparklesRef.current.forEach((sp) => {
           sp.x += sp.vx * dt;
           sp.y += sp.vy * dt;
-          sp.life -= dt * 0.9;
+          sp.life -= dt * 0.85;
           if (sp.life > 0) {
             ctx.save();
             ctx.globalAlpha = Math.max(0, sp.life);
             ctx.shadowColor = sp.color;
-            ctx.shadowBlur = 14;
+            ctx.shadowBlur = 18;
             ctx.fillStyle = sp.color;
             ctx.beginPath();
             ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
@@ -3910,42 +4059,43 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         });
         goalSparklesRef.current = goalSparklesRef.current.filter((s) => s.life > 0);
 
-        const pulse = 1 + Math.sin(currentTime * 0.012) * 0.07;
-        const bannerH = 76;
+        const pulse = 1 + Math.sin(currentTime * 0.014) * 0.08;
+        const bannerH = 92;
         const centerY = h / 2;
 
-        // Radial backdrop aura
-        const auraGrad = ctx.createRadialGradient(w / 2, centerY, 10, w / 2, centerY, w * 0.55);
-        auraGrad.addColorStop(0, isDouble ? 'rgba(245, 158, 11, 0.45)' : isPlayerGoal ? 'rgba(6, 182, 212, 0.45)' : 'rgba(244, 63, 94, 0.45)');
+        // Radial backdrop aura & ray halo
+        const auraGrad = ctx.createRadialGradient(w / 2, centerY, 5, w / 2, centerY, w * 0.65);
+        auraGrad.addColorStop(0, isDouble ? 'rgba(245, 158, 11, 0.65)' : isPlayerGoal ? 'rgba(6, 182, 212, 0.65)' : 'rgba(244, 63, 94, 0.65)');
+        auraGrad.addColorStop(0.5, isDouble ? 'rgba(217, 119, 6, 0.25)' : isPlayerGoal ? 'rgba(14, 165, 233, 0.25)' : 'rgba(225, 29, 72, 0.25)');
         auraGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
         ctx.fillStyle = auraGrad;
-        ctx.fillRect(0, centerY - bannerH * 1.5, w, bannerH * 3);
+        ctx.fillRect(0, centerY - bannerH * 1.8, w, bannerH * 3.6);
 
         // Glassmorphism Center Ribbon
         const ribbonGrad = ctx.createLinearGradient(0, centerY - bannerH / 2, 0, centerY + bannerH / 2);
         if (isDouble) {
-          ribbonGrad.addColorStop(0, 'rgba(45, 16, 95, 0.94)');
+          ribbonGrad.addColorStop(0, 'rgba(67, 24, 9, 0.96)');
           ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
-          ribbonGrad.addColorStop(1, 'rgba(112, 44, 5, 0.94)');
+          ribbonGrad.addColorStop(1, 'rgba(120, 53, 15, 0.96)');
         } else if (isPlayerGoal) {
-          ribbonGrad.addColorStop(0, 'rgba(8, 47, 73, 0.94)');
+          ribbonGrad.addColorStop(0, 'rgba(12, 74, 110, 0.96)');
           ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
-          ribbonGrad.addColorStop(1, 'rgba(12, 74, 110, 0.94)');
+          ribbonGrad.addColorStop(1, 'rgba(8, 47, 73, 0.96)');
         } else {
-          ribbonGrad.addColorStop(0, 'rgba(76, 5, 25, 0.94)');
+          ribbonGrad.addColorStop(0, 'rgba(136, 19, 55, 0.96)');
           ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
-          ribbonGrad.addColorStop(1, 'rgba(88, 28, 135, 0.94)');
+          ribbonGrad.addColorStop(1, 'rgba(76, 5, 25, 0.96)');
         }
 
         ctx.fillStyle = ribbonGrad;
         ctx.fillRect(0, centerY - bannerH / 2, w, bannerH);
 
-        // Neon Glow Trim Lines
-        const trimColor = isDouble ? '#f59e0b' : isPlayerGoal ? '#38bdf8' : '#fb7185';
+        // Neon Glow Trim Lines (Top & Bottom borders)
+        const trimColor = isDouble ? '#facc15' : isPlayerGoal ? '#38bdf8' : '#fb7185';
         ctx.strokeStyle = trimColor;
-        ctx.lineWidth = 3.5;
+        ctx.lineWidth = 4;
         ctx.shadowColor = trimColor;
-        ctx.shadowBlur = 22;
+        ctx.shadowBlur = 26;
 
         ctx.beginPath();
         ctx.moveTo(0, centerY - bannerH / 2);
@@ -3954,50 +4104,59 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.lineTo(w, centerY + bannerH / 2);
         ctx.stroke();
 
-        // Shimmer Light Sweep
-        const sweepX = ((currentTime * 0.45) % (w * 2)) - w / 2;
-        const sweepGrad = ctx.createLinearGradient(sweepX - 70, centerY, sweepX + 70, centerY);
+        // Dynamic Shimmer Light Sweep Across Banner
+        const sweepX = ((currentTime * 0.55) % (w * 2.2)) - w * 0.6;
+        const sweepGrad = ctx.createLinearGradient(sweepX - 85, centerY, sweepX + 85, centerY);
         sweepGrad.addColorStop(0, 'rgba(255,255,255,0)');
-        sweepGrad.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+        sweepGrad.addColorStop(0.5, 'rgba(255,255,255,0.55)');
         sweepGrad.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = sweepGrad;
         ctx.fillRect(0, centerY - bannerH / 2, w, bannerH);
 
-        // Render Multi-Layered 3D Glowing Text
+        // Render Multi-Layered High-Res 3D Glowing Text
         ctx.save();
         ctx.translate(w / 2, centerY);
         ctx.scale(pulse, pulse);
 
-        // 3D Shadow Drop
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-        ctx.font = '900 23px Outfit, system-ui, sans-serif';
+        // 1. Heavy 3D Shadow Drop
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.font = '900 28px Outfit, system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(bannerText, 3, 3);
+        ctx.fillText(bannerText, 4, 4);
 
-        // Glowing Outer Stroke
-        ctx.strokeStyle = isDouble ? '#78350f' : isPlayerGoal ? '#0c4a6e' : '#881337';
-        ctx.lineWidth = 7;
+        // 2. Deep Outer Stroke
+        ctx.strokeStyle = isDouble ? '#451a03' : isPlayerGoal ? '#032830' : '#4c0519';
+        ctx.lineWidth = 10;
+        ctx.lineJoin = 'round';
         ctx.strokeText(bannerText, 0, 0);
 
-        // High-res Metallic / Cyber Gradient Text Fill
-        const textGrad = ctx.createLinearGradient(0, -14, 0, 14);
+        // 3. Bright Glowing Inner Outline
+        ctx.strokeStyle = trimColor;
+        ctx.lineWidth = 3;
+        ctx.strokeText(bannerText, 0, 0);
+
+        // 4. High-res Metallic / Cyber Gradient Text Fill
+        const textGrad = ctx.createLinearGradient(0, -18, 0, 18);
         if (isDouble) {
           textGrad.addColorStop(0, '#ffffff');
-          textGrad.addColorStop(0.35, '#fde047');
-          textGrad.addColorStop(1, '#f59e0b');
+          textGrad.addColorStop(0.3, '#fef08a');
+          textGrad.addColorStop(0.75, '#facc15');
+          textGrad.addColorStop(1, '#ca8a04');
         } else if (isPlayerGoal) {
           textGrad.addColorStop(0, '#ffffff');
-          textGrad.addColorStop(0.35, '#7dd3fc');
+          textGrad.addColorStop(0.3, '#bae6fd');
+          textGrad.addColorStop(0.75, '#38bdf8');
           textGrad.addColorStop(1, '#0284c7');
         } else {
           textGrad.addColorStop(0, '#ffffff');
-          textGrad.addColorStop(0.35, '#fca5a5');
+          textGrad.addColorStop(0.3, '#fecdd3');
+          textGrad.addColorStop(0.75, '#fb7185');
           textGrad.addColorStop(1, '#e11d48');
         }
 
         ctx.shadowColor = trimColor;
-        ctx.shadowBlur = 28;
+        ctx.shadowBlur = 36;
         ctx.fillStyle = textGrad;
         ctx.fillText(bannerText, 0, 0);
 

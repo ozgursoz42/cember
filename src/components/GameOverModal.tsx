@@ -378,7 +378,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 text-amber-300 font-bold text-xs tracking-wider flex items-center justify-center gap-2 transition active:scale-[0.98] border border-amber-500/40"
           >
             <ShoppingBag className="w-4 h-4 text-amber-400" />
-            <span>MAĞAZA 🛒 (GÜÇ / ÇUBUK AL)</span>
+            <span>Mağaza 🛒 (GÜÇ / ÇUBUK AL)</span>
           </button>
 
           <button

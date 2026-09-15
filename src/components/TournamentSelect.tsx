@@ -86,16 +86,14 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
 
         {/* Paddle Color Visual Representation */}
         <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Çift Renk Milli Çubuk</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Milli Çubuk</span>
           <div
-            className="w-16 h-3.5 rounded-full border border-white/40 shadow-lg overflow-hidden flex transition-all duration-300"
+            className="w-16 h-3.5 rounded-full border border-white/40 shadow-lg transition-all duration-300"
             style={{
+              backgroundColor: selectedTeam.paddleColor,
               boxShadow: `0 0 12px ${selectedTeam.glowColor}`,
             }}
-          >
-            <div className="w-1/2 h-full" style={{ backgroundColor: selectedTeam.paddleColor }} />
-            <div className="w-1/2 h-full" style={{ backgroundColor: selectedTeam.secondaryColor || selectedTeam.accentColor }} />
-          </div>
+          />
         </div>
       </div>
 
@@ -163,11 +161,9 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
 
                 <div className="flex items-center gap-1 shrink-0 ml-1">
                   <div
-                    className="w-3 h-6 rounded-full border border-white/30 overflow-hidden flex flex-col shadow-inner"
-                  >
-                    <div className="w-full h-1/2" style={{ backgroundColor: team.paddleColor }} />
-                    <div className="w-full h-1/2" style={{ backgroundColor: team.secondaryColor || team.accentColor }} />
-                  </div>
+                    className="w-3 h-6 rounded-full border border-white/30 shadow-inner"
+                    style={{ backgroundColor: team.paddleColor }}
+                  />
                   {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
                 </div>
               </button>

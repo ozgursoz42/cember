@@ -113,7 +113,7 @@ export const AdventureRoadmap: React.FC<AdventureRoadmapProps> = ({
             title="Arena Mağazası"
           >
             <ShoppingBag className="w-4 h-4 text-amber-400" />
-            <span className="text-[11px] font-black hidden sm:inline">MAĞAZA</span>
+            <span className="text-[11px] font-black hidden sm:inline">Mağaza</span>
           </button>
 
           {/* Badge showcase toggle */}

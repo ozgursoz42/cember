@@ -252,7 +252,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({ onClose }) => {
                         <div
                           className="w-9 h-3.5 rounded-full shadow-md transition-all"
                           style={{
-                            background: `linear-gradient(90deg, ${skin.color}, ${skin.secondaryColor})`,
+                            backgroundColor: skin.color,
                             boxShadow: `0 0 10px ${skin.glowColor}`,
                           }}
                         />
@@ -331,7 +331,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({ onClose }) => {
                         <div
                           className="w-9 h-3.5 rounded-full shadow-md transition-all"
                           style={{
-                            background: `linear-gradient(90deg, ${skin.color}, ${skin.secondaryColor})`,
+                            backgroundColor: skin.color,
                             boxShadow: `0 0 10px ${skin.glowColor}`,
                           }}
                         />

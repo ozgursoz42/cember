@@ -154,10 +154,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                     {opponentTeam ? opponentTeam.name : 'RAKİP'}
                   </span>
                   {opponentTeam && (
-                    <div className="w-2.5 h-2.5 rounded-full border border-white/40 overflow-hidden flex flex-col shrink-0 shadow-sm">
-                      <div className="w-full h-1/2" style={{ backgroundColor: oppColor }} />
-                      <div className="w-full h-1/2" style={{ backgroundColor: oppSecColor }} />
-                    </div>
+                    <div className="w-2.5 h-2.5 rounded-full border border-white/40 overflow-hidden shrink-0 shadow-sm" style={{ backgroundColor: oppColor }} />
                   )}
                 </div>
                 {cardState?.opponentYellowCards ? (
@@ -205,10 +202,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <div className="flex flex-col items-end leading-none max-w-[75px] truncate">
                 <div className="flex items-center gap-1">
                   {playerTeam && (
-                    <div className="w-2.5 h-2.5 rounded-full border border-white/40 overflow-hidden flex flex-col shrink-0 shadow-sm">
-                      <div className="w-full h-1/2" style={{ backgroundColor: playerColor }} />
-                      <div className="w-full h-1/2" style={{ backgroundColor: playerSecColor }} />
-                    </div>
+                    <div className="w-2.5 h-2.5 rounded-full border border-white/40 overflow-hidden shrink-0 shadow-sm" style={{ backgroundColor: playerColor }} />
                   )}
                   <span
                     className="text-[10px] font-black truncate tracking-wide"

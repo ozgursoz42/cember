@@ -90,6 +90,7 @@ export interface NetworkGameStatePayload {
   guestIceWallActive?: boolean;
   toast?: { title: string; subtitle: string; color: string; icon: string } | null;
   soundEvent?: string;
+  soundEvents?: string[];
   gameOver?: { winner: 'player' | 'opponent'; stats: GameStats } | null;
 }
 
@@ -577,7 +578,7 @@ export class MultiplayerManager {
     }
   }
 
-  // Fast broadcast game state (Host -> Guest) with throttling (max 45 fps)
+  // Fast broadcast game state (Host -> Guest) with ultra-low latency 60FPS rate
   public sendGameState(state: NetworkGameStatePayload) {
     if (this.role === 'host') {
       const now = performance.now();
@@ -587,25 +588,26 @@ export class MultiplayerManager {
           this.send({ type: 'STATE', data: state });
         };
         sendGameOver();
-        setTimeout(sendGameOver, 50);
-        setTimeout(sendGameOver, 120);
-        setTimeout(sendGameOver, 250);
-        setTimeout(sendGameOver, 500);
+        setTimeout(sendGameOver, 40);
+        setTimeout(sendGameOver, 100);
+        setTimeout(sendGameOver, 220);
+        setTimeout(sendGameOver, 450);
         return;
       }
 
-      if (now - this.lastStateSent >= 20 || state.isRoundResetting || state.soundEvent) {
+      const hasEvents = (state.soundEvents && state.soundEvents.length > 0) || !!state.soundEvent;
+      if (now - this.lastStateSent >= 16 || state.isRoundResetting || hasEvents) {
         this.lastStateSent = now;
         this.send({ type: 'STATE', data: state });
       }
     }
   }
 
-  // Fast broadcast paddle input (Guest -> Host) with throttling (max 45 fps)
+  // Fast broadcast paddle input (Guest -> Host) at 60FPS
   public sendInput(input: NetworkInputPayload) {
     if (this.role === 'guest') {
       const now = performance.now();
-      if (now - this.lastInputSent >= 22 || input.isSmash) {
+      if (now - this.lastInputSent >= 16 || input.isSmash) {
         this.lastInputSent = now;
         this.send({ type: 'INPUT', data: input });
       }

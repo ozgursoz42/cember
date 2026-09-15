@@ -5,7 +5,28 @@ class SoundEngine {
   private isMuted: boolean = false;
 
   constructor() {
-    // Lazy initialize to adhere to browser user gesture requirements
+    // Auto-unlock AudioContext on first user gesture anywhere on window
+    if (typeof window !== 'undefined') {
+      const unlockAudio = () => {
+        this.resume();
+        window.removeEventListener('pointerdown', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+        window.removeEventListener('click', unlockAudio);
+      };
+      window.addEventListener('pointerdown', unlockAudio, { passive: true });
+      window.addEventListener('touchstart', unlockAudio, { passive: true });
+      window.addEventListener('keydown', unlockAudio, { passive: true });
+      window.addEventListener('click', unlockAudio, { passive: true });
+    }
+  }
+
+  public resume() {
+    if (typeof window === 'undefined') return;
+    const ctx = this.initCtx();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
   }
 
   private initCtx(): AudioContext | null {
