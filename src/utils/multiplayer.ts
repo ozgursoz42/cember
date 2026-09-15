@@ -58,30 +58,6 @@ export interface NetworkPowerUpState {
   symbol?: string;
 }
 
-export type NetworkGameEventType =
-  | 'PADDLE_HIT'
-  | 'SENSOR_HIT'
-  | 'WALL_HIT'
-  | 'GOAL'
-  | 'POWERUP_COLLECT'
-  | 'ICE_SHATTER'
-  | 'SMASH_HIT'
-  | 'ROUND_START'
-  | 'ROUND_END'
-  | 'SPECIAL_EFFECT';
-
-export interface NetworkGameEvent {
-  eventId: string;
-  serverTick: number;
-  timestamp: number;
-  type: NetworkGameEventType;
-  x: number;
-  y: number;
-  color?: string;
-  playerId?: 'host' | 'guest' | 'none';
-  data?: Record<string, any>;
-}
-
 export interface NetworkPaddleState {
   x: number;
   y: number;
@@ -98,7 +74,6 @@ export interface NetworkPaddleState {
 }
 
 export interface NetworkGameStatePayload {
-  serverTick: number;
   t: number;
   score: GameScore;
   rally?: number;
@@ -110,7 +85,6 @@ export interface NetworkGameStatePayload {
   guestPaddle: NetworkPaddleState;
   sensors: NetworkSensorState[];
   powerUps: NetworkPowerUpState[];
-  events?: NetworkGameEvent[]; // Replicated authoritative game events
   activePowerUps?: ActivePowerUpStatus[];
   hostIceWallActive?: boolean;
   guestIceWallActive?: boolean;
@@ -121,9 +95,7 @@ export interface NetworkGameStatePayload {
 }
 
 export interface NetworkInputPayload {
-  seq: number;
-  clientTime: number;
-  inputTick?: number;
+  t: number;
   targetX: number;
   targetY: number;
   isSmash?: boolean;
@@ -155,11 +127,6 @@ export class MultiplayerManager {
   public status: ConnectionStatus = 'idle';
   public errorMessage: string = '';
   public ping: number = 0;
-
-  // Latency & Packet Loss Debug Simulator
-  public simulatedLatencyMs: number = 0;
-  public simulatedJitterMs: number = 0;
-  public simulatedPacketLoss: number = 0; // e.g. 0.05 for 5% loss
 
   public myProfile: PlayerProfile;
   public opponentProfile: PlayerProfile | null = null;
@@ -240,13 +207,13 @@ export class MultiplayerManager {
 
   // Connect to MQTT Broker with automatic fallback
   private connectToBroker(code: string): Promise<MqttClient> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const brokerUrl = PUBLIC_BROKERS[this.brokerIndex % PUBLIC_BROKERS.length];
       const client = mqtt.connect(brokerUrl, {
         clientId: this.clientId,
         clean: true,
-        connectTimeout: 4500,
-        reconnectPeriod: 2000,
+        connectTimeout: 8000,
+        reconnectPeriod: 2500,
         keepalive: 15,
       });
 
@@ -254,56 +221,35 @@ export class MultiplayerManager {
 
       const timeout = setTimeout(() => {
         if (!resolved) {
-          try {
-            client.end(true);
-          } catch {
-            // ignore
-          }
+          client.end(true);
           // Try next broker
           this.brokerIndex++;
           const nextUrl = PUBLIC_BROKERS[this.brokerIndex % PUBLIC_BROKERS.length];
           const fallbackClient = mqtt.connect(nextUrl, {
             clientId: this.clientId,
             clean: true,
-            connectTimeout: 4500,
-            reconnectPeriod: 2000,
+            connectTimeout: 8000,
+            reconnectPeriod: 2500,
             keepalive: 15,
           });
-          fallbackClient.on('connect', async () => {
+          fallbackClient.on('connect', () => {
             this.mqttClient = fallbackClient;
-            await this.setupMqttSubscriptions(fallbackClient, code);
-            if (!resolved) {
-              resolved = true;
-              resolve(fallbackClient);
-            }
-          });
-          fallbackClient.on('message', (_topic, messageBuffer) => {
-            try {
-              const str = messageBuffer.toString();
-              if (!str) return;
-              const msg = JSON.parse(str) as NetMessage;
-              if (msg && msg.senderId !== this.clientId) {
-                this.handleIncomingMessage(msg);
-              }
-            } catch (err) {
-              console.warn('MQTT parse warning:', err);
-            }
+            this.setupMqttSubscriptions(fallbackClient, code);
+            resolve(fallbackClient);
           });
           fallbackClient.on('error', (err) => {
             console.warn('Fallback MQTT error:', err);
           });
         }
-      }, 3500);
+      }, 7000);
 
-      client.on('connect', async () => {
+      client.on('connect', () => {
         if (!resolved) {
+          resolved = true;
           clearTimeout(timeout);
           this.mqttClient = client;
-          await this.setupMqttSubscriptions(client, code);
-          if (!resolved) {
-            resolved = true;
-            resolve(client);
-          }
+          this.setupMqttSubscriptions(client, code);
+          resolve(client);
         }
       });
 
@@ -326,20 +272,17 @@ export class MultiplayerManager {
     });
   }
 
-  private setupMqttSubscriptions(client: MqttClient, code: string): Promise<void> {
-    return new Promise((resolve) => {
-      const topics = [
-        `${this.getTopicPrefix(code)}/#`,
-        this.getLobbyTopic(code),
-        this.getHostToGuestTopic(code),
-        this.getGuestToHostTopic(code),
-      ];
-      client.subscribe(topics, { qos: 0 }, (err) => {
-        if (err) {
-          console.warn('Subscription warning:', err);
-        }
-        resolve();
-      });
+  private setupMqttSubscriptions(client: MqttClient, code: string) {
+    const topics = [
+      `${this.getTopicPrefix(code)}/#`,
+      this.getLobbyTopic(code),
+      this.getHostToGuestTopic(code),
+      this.getGuestToHostTopic(code),
+    ];
+    client.subscribe(topics, { qos: 0 }, (err) => {
+      if (err) {
+        console.warn('Subscription warning:', err);
+      }
     });
   }
 
@@ -394,7 +337,7 @@ export class MultiplayerManager {
           clearInterval(this.presenceInterval);
           this.presenceInterval = null;
         }
-      }, 800);
+      }, 1200);
 
       // Send immediate first presence announcement
       this.send({
@@ -444,7 +387,7 @@ export class MultiplayerManager {
           profile: this.myProfile,
         });
 
-        if (attempts > 35 && (this.status as ConnectionStatus) !== 'connected') {
+        if (attempts > 30 && (this.status as ConnectionStatus) !== 'connected') {
           if (this.handshakeInterval) {
             clearInterval(this.handshakeInterval);
             this.handshakeInterval = null;
@@ -456,7 +399,7 @@ export class MultiplayerManager {
 
       sendHandshake();
       if (this.handshakeInterval) clearInterval(this.handshakeInterval);
-      this.handshakeInterval = window.setInterval(sendHandshake, 350);
+      this.handshakeInterval = window.setInterval(sendHandshake, 600);
     } catch (err: any) {
       console.error('Failed to join room:', err);
       this.errorMessage = 'Odaya bağlanılamadı.';
@@ -466,29 +409,6 @@ export class MultiplayerManager {
   }
 
   private handleIncomingMessage(msg: NetMessage) {
-    if (!msg || !msg.type) return;
-
-    // Simulated packet loss testing
-    if (this.simulatedPacketLoss > 0 && (msg.type === 'STATE' || msg.type === 'INPUT')) {
-      if (Math.random() < this.simulatedPacketLoss) {
-        return; // Drop packet
-      }
-    }
-
-    // Simulated latency & jitter testing
-    if (this.simulatedLatencyMs > 0 && (msg.type === 'STATE' || msg.type === 'INPUT')) {
-      const jitter = (Math.random() * 2 - 1) * this.simulatedJitterMs;
-      const delay = Math.max(0, this.simulatedLatencyMs + jitter);
-      setTimeout(() => {
-        this.processIncomingMessage(msg);
-      }, delay);
-      return;
-    }
-
-    this.processIncomingMessage(msg);
-  }
-
-  private processIncomingMessage(msg: NetMessage) {
     if (!msg || !msg.type) return;
 
     switch (msg.type) {

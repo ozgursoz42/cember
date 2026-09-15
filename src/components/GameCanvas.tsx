@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import {
   Ball,
   SensorCircle,
@@ -29,7 +29,7 @@ import {
 import { soundEngine } from '../utils/audio';
 import { StageTheme } from '../adventureData';
 import { gyroController } from '../utils/gyroscope';
-import { MultiplayerManager, NetworkGameStatePayload, NetworkInputPayload, NetworkGameEvent, NetworkGameEventType } from '../utils/multiplayer';
+import { MultiplayerManager, NetworkGameStatePayload, NetworkInputPayload } from '../utils/multiplayer';
 import {
   getShopState,
   PLAYER_PADDLE_SKINS,
@@ -143,18 +143,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [score, stage]);
 
   const equippedBallSkinRef = useRef<ShopBallSkin>(BALL_SKINS[0]);
-
-  const physicsAccumulatorRef = useRef(0);
-  const serverTickRef = useRef(0);
-  const guestInputSeqRef = useRef(0);
-  const lastReceivedTickRef = useRef(0);
-
-  // Authoritative Replicated Events
-  const pendingAuthoritativeEventsRef = useRef<NetworkGameEvent[]>([]);
-  const processedEventIdsRef = useRef<Set<string>>(new Set());
-  const lastCollisionEventIdRef = useRef('None');
-  const lastCollisionTickRef = useRef(0);
-  const lastReceivedGuestSeqRef = useRef(0);
 
   // Sync team paddle colors and ball skin when country team or shop equipped skin changes
   useEffect(() => {
@@ -362,117 +350,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       lineWidth: 3,
     });
   };
-
-  const triggerGoalSparkles = useCallback((x: number, y: number) => {
-    const colors = ['#facc15', '#38bdf8', '#fb7185', '#a855f7', '#ffffff'];
-    for (let i = 0; i < 35; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 6;
-      goalSparklesRef.current.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: 2 + Math.random() * 3.5,
-        alpha: 1,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        life: 1,
-      });
-    }
-  }, []);
-
-  // Process an Authoritative Replicated Game Event locally (Host or Guest)
-  const processGameEventLocally = useCallback(
-    (evt: NetworkGameEvent) => {
-      const w = gameStateRef.current.width;
-      const h = gameStateRef.current.height;
-      if (!w || !h) return;
-
-      const isGuest = isMultiplayer && multiplayerRole === 'guest';
-      const renderX = isGuest ? (1 - evt.x) * w : evt.x * w;
-      const renderY = isGuest ? (1 - evt.y) * h : evt.y * h;
-      const color = evt.color || '#22d3ee';
-
-      lastCollisionEventIdRef.current = evt.eventId;
-      lastCollisionTickRef.current = evt.serverTick;
-
-      switch (evt.type) {
-        case 'PADDLE_HIT': {
-          soundEngine.playPaddleHit(true);
-          spawnShockwave(renderX, renderY, color, 45);
-          break;
-        }
-        case 'SENSOR_HIT': {
-          soundEngine.playSensorHit();
-          spawnHitParticles(renderX, renderY, color, 14, 1.4);
-          spawnShockwave(renderX, renderY, color, 85);
-          break;
-        }
-        case 'WALL_HIT': {
-          soundEngine.playWallBounce();
-          break;
-        }
-        case 'GOAL': {
-          soundEngine.playScore(true);
-          spawnShockwave(renderX, renderY, color, 120);
-          triggerGoalSparkles(renderX, renderY);
-          break;
-        }
-        case 'SMASH_HIT': {
-          soundEngine.playSmashHit();
-          spawnShockwave(renderX, renderY, color, 70);
-          break;
-        }
-        case 'POWERUP_COLLECT': {
-          soundEngine.playPowerUpCollect(false);
-          spawnHitParticles(renderX, renderY, color, 20, 1.6);
-          spawnShockwave(renderX, renderY, color, 55);
-          break;
-        }
-        case 'ICE_SHATTER': {
-          soundEngine.playIceShatter();
-          spawnHitParticles(renderX, renderY, '#93c5fd', 25, 2.0, 'ice');
-          spawnShockwave(renderX, renderY, '#93c5fd', 60);
-          break;
-        }
-      }
-    },
-    [isMultiplayer, multiplayerRole, spawnHitParticles, triggerGoalSparkles]
-  );
-
-  // Emit an Authoritative Game Event from the Authoritative Simulation (Host)
-  const emitAuthoritativeGameEvent = useCallback(
-    (
-      type: NetworkGameEventType,
-      normX: number,
-      normY: number,
-      color?: string,
-      playerId?: 'host' | 'guest' | 'none',
-      data?: Record<string, any>
-    ) => {
-      const evtId = `evt_${serverTickRef.current}_${Math.random().toString(36).substr(2, 6)}`;
-      const evt: NetworkGameEvent = {
-        eventId: evtId,
-        serverTick: serverTickRef.current,
-        timestamp: performance.now(),
-        type,
-        x: normX,
-        y: normY,
-        color,
-        playerId,
-        data,
-      };
-
-      // Process event locally immediately
-      processGameEventLocally(evt);
-
-      // Queue event for network replication if host
-      if (isMultiplayer && multiplayerRole === 'host') {
-        pendingAuthoritativeEventsRef.current.push(evt);
-      }
-    },
-    [isMultiplayer, multiplayerRole, processGameEventLocally]
-  );
 
   const triggerToast = (title: string, subtitle: string, color: string, icon: string) => {
     powerUpToastRef.current = {
@@ -1397,11 +1274,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       handlePointerMove(e);
 
       // On tap/strike, if moving or tapping forward close to the ball, apply forward strike boost
+      const ball = ballRef.current;
       const paddle = playerPaddleRef.current;
       if (paddle.isFrozen || paddle.isEjected) return;
 
-      if (isMultiplayer && multiplayerRole === 'guest') {
-        if (multiplayerManager) {
+      const dist = Math.hypot(ball.x - paddle.x, ball.y - paddle.y);
+      if (dist < 70 && ball.vy > 0) {
+        ball.vy = -Math.abs(ball.vy) * 1.15;
+        ball.speed = Math.min(ball.speed * 1.15, ball.maxSpeed);
+        soundEngine.playSmashHit();
+        spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
+        spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
+
+        if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
           const w = gameStateRef.current.width;
           const h = gameStateRef.current.height;
           multiplayerManager.sendInput({
@@ -1411,17 +1296,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             isSmash: true,
           });
         }
-        return;
-      }
-
-      const ball = ballRef.current;
-      const dist = Math.hypot(ball.x - paddle.x, ball.y - paddle.y);
-      if (dist < 70 && ball.vy > 0) {
-        ball.vy = -Math.abs(ball.vy) * 1.15;
-        ball.speed = Math.min(ball.speed * 1.15, ball.maxSpeed);
-        soundEngine.playSmashHit();
-        spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
-        spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
       }
     };
 
@@ -1440,13 +1314,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     if (multiplayerRole === 'host') {
       const unsub = multiplayerManager.onInput((input: NetworkInputPayload) => {
-        if (input.seq !== undefined) {
-          if (input.seq <= lastReceivedGuestSeqRef.current) {
-            return; // Discard stale or out-of-order guest input
-          }
-          lastReceivedGuestSeqRef.current = input.seq;
-        }
-
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
         const opp = opponentPaddleRef.current;
@@ -1462,42 +1329,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             b.vy = Math.abs(b.vy) * 1.15;
             b.speed = Math.min(b.speed * 1.15, b.maxSpeed);
             b.isSmash = true;
-            emitAuthoritativeGameEvent(
-              'SMASH_HIT',
-              b.x / w,
-              b.y / h,
-              opp.glowColor || '#f43f5e',
-              'guest'
-            );
+            soundEngine.playSmashHit();
+            spawnHitParticles(b.x, b.y, '#f43f5e', 16, 1.5);
+            spawnShockwave(b.x, b.y, '#f43f5e', 60);
           }
         }
       });
       return unsub;
     } else if (multiplayerRole === 'guest') {
       const unsub = multiplayerManager.onState((netState: NetworkGameStatePayload) => {
-        // Discard out-of-order or duplicate state snapshots
-        if (netState.serverTick !== undefined) {
-          if (netState.serverTick <= lastReceivedTickRef.current) {
-            return;
-          }
-          lastReceivedTickRef.current = netState.serverTick;
-        }
-
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
 
-        // 1. Process Replicated Authoritative Gameplay Events
-        if (netState.events && netState.events.length > 0) {
-          netState.events.forEach((evt) => {
-            if (processedEventIdsRef.current.has(evt.eventId)) {
-              return;
-            }
-            processedEventIdsRef.current.add(evt.eventId);
-            processGameEventLocally(evt);
-          });
-        }
-
-        // Play legacy sound events if provided
+        // 1. Play incoming sound events from Host
         if (netState.soundEvents && netState.soundEvents.length > 0) {
           netState.soundEvents.forEach((evt) => handleGuestNetworkSound(evt));
         } else if (netState.soundEvent) {
@@ -1708,9 +1552,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // Guest: send input to host every frame
       if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
-        guestInputSeqRef.current += 1;
         multiplayerManager.sendInput({
-          seq: guestInputSeqRef.current,
           t: currentTime,
           targetX: player.targetX / w,
           targetY: player.targetY / h,
@@ -1740,15 +1582,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             } else if (b.x + b.radius > w) {
               b.x = w - b.radius;
               b.vx = -Math.abs(b.vx);
-            }
-
-            // Prevent ball from sinking into guest paddle while waiting for authoritative bounce
-            const halfW = player.width / 2;
-            const paddleTop = player.y - player.height / 2;
-            if (b.vy > 0 && b.y + b.radius >= paddleTop && b.y - b.radius <= player.y + player.height / 2) {
-              if (b.x >= player.x - halfW - b.radius && b.x <= player.x + halfW + b.radius) {
-                b.y = Math.min(b.y, paddleTop - b.radius);
-              }
             }
           }
         }
@@ -1912,9 +1745,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             opponent.vx = 0;
             opponent.vy = 0;
           } else if (isMultiplayer && multiplayerRole === 'host') {
-            // Multiplayer Host: guest paddle position is driven by guest player input with zero lag
-            opponent.x = opponent.targetX;
-            opponent.y = opponent.targetY;
+            // Multiplayer Host: guest paddle position is driven by guest player input
+            opponent.x = lerp(opponent.x, opponent.targetX, 0.35);
+            opponent.y = lerp(opponent.y, opponent.targetY, 0.35);
             opponent.prevX = prevOppX;
             opponent.prevY = prevOppY;
             opponent.vx = (opponent.x - prevOppX) / Math.max(dt, 0.001);
@@ -2405,33 +2238,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
                   const isHardStrike = playerHit.isSmash || player.isRocketPowered || player.vy < -60 || currentBall.speed >= 620;
 
-                  if (isMultiplayer && multiplayerRole === 'host') {
-                    emitAuthoritativeGameEvent(
-                      playerHit.isSmash ? 'SMASH_HIT' : 'PADDLE_HIT',
-                      currentBall.x / w,
-                      currentBall.y / h,
-                      player.glowColor || '#22d3ee',
-                      'host'
-                    );
-                    state.screenShake = playerHit.isSmash ? 8 : 4;
+                  if (player.isRocketPowered) {
+                    triggerSoundEvent('rocket');
+                    spawnHitParticles(currentBall.x, currentBall.y, '#06b6d4', 28, 2.4, 'flame');
+                    spawnShockwave(player.x, player.y, '#06b6d4', 75);
+                    state.screenShake = 10;
+                  } else if (playerHit.isSmash) {
+                    triggerSoundEvent('smash_hit');
+                    spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 24, 2.2);
+                    spawnShockwave(player.x, player.y, '#38bdf8', 70);
+                    state.screenShake = 8;
                   } else {
-                    if (player.isRocketPowered) {
-                      triggerSoundEvent('rocket');
-                      spawnHitParticles(currentBall.x, currentBall.y, '#06b6d4', 28, 2.4, 'flame');
-                      spawnShockwave(player.x, player.y, '#06b6d4', 75);
-                      state.screenShake = 10;
-                    } else if (playerHit.isSmash) {
-                      triggerSoundEvent('smash_hit');
-                      spawnHitParticles(currentBall.x, currentBall.y, '#38bdf8', 24, 2.2);
-                      spawnShockwave(player.x, player.y, '#38bdf8', 70);
-                      state.screenShake = 8;
-                    } else {
-                      triggerSoundEvent('paddle_hit_player', state.comboCount);
-                      soundEngine.playCombo(state.comboCount);
-                      spawnHitParticles(currentBall.x, currentBall.y, '#22d3ee', 12, 1.2);
-                      spawnShockwave(player.x, player.y, '#22d3ee', 45);
-                      state.screenShake = 4;
-                    }
+                    triggerSoundEvent('paddle_hit_player', state.comboCount);
+                    soundEngine.playCombo(state.comboCount);
+                    spawnHitParticles(currentBall.x, currentBall.y, '#22d3ee', 12, 1.2);
+                    spawnShockwave(player.x, player.y, '#22d3ee', 45);
+                    state.screenShake = 4;
                   }
 
                   // Card penalty rules: ONLY active in Tournament Mode
@@ -2529,7 +2351,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               // OPPONENT PADDLE COLLISION (Supports smash, rocket & Card Penalty Detection)
               if (!opponent.isEjected) {
                 const oppHit = checkBallPaddleCollision(currentBall, opponent, difficulty);
-
                 if (oppHit.collided) {
                   opponent.hitFlash = 1.0;
                   state.rallyCount++;
@@ -2538,32 +2359,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
                   const isOppHardStrike = oppHit.isSmash || opponent.isRocketPowered || opponent.vy > 60 || currentBall.speed >= 620;
 
-                  if (isMultiplayer && multiplayerRole === 'host') {
-                    emitAuthoritativeGameEvent(
-                      oppHit.isSmash ? 'SMASH_HIT' : 'PADDLE_HIT',
-                      currentBall.x / w,
-                      currentBall.y / h,
-                      opponent.glowColor || '#f43f5e',
-                      'guest'
-                    );
-                    state.screenShake = oppHit.isSmash ? 8 : 4;
+                  if (opponent.isRocketPowered) {
+                    triggerSoundEvent('rocket');
+                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 28, 2.4, 'flame');
+                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 75);
+                    state.screenShake = 10;
+                  } else if (oppHit.isSmash) {
+                    triggerSoundEvent('smash_hit');
+                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 24, 2.2);
+                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 70);
+                    state.screenShake = 8;
                   } else {
-                    if (opponent.isRocketPowered) {
-                      triggerSoundEvent('rocket');
-                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 28, 2.4, 'flame');
-                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 75);
-                      state.screenShake = 10;
-                    } else if (oppHit.isSmash) {
-                      triggerSoundEvent('smash_hit');
-                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 24, 2.2);
-                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 70);
-                      state.screenShake = 8;
-                    } else {
-                      triggerSoundEvent('paddle_hit_opp');
-                      spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 12, 1.2);
-                      spawnShockwave(opponent.x, opponent.y, '#f43f5e', 45);
-                      state.screenShake = 4;
-                    }
+                    triggerSoundEvent('paddle_hit_opp');
+                    spawnHitParticles(currentBall.x, currentBall.y, '#f43f5e', 12, 1.2);
+                    spawnShockwave(opponent.x, opponent.y, '#f43f5e', 45);
+                    state.screenShake = 4;
                   }
 
                   if (isTournamentMode && isOppHardStrike) {
@@ -3079,15 +2889,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           const queuedSoundEvents = [...pendingSoundEventsRef.current];
           pendingSoundEventsRef.current = [];
 
-          const queuedEvents = [...pendingAuthoritativeEventsRef.current];
-          pendingAuthoritativeEventsRef.current = [];
-
-          serverTickRef.current += 1;
-
           multiplayerManager.sendGameState({
-            serverTick: serverTickRef.current,
             t: currentTime,
-            events: queuedEvents.length > 0 ? queuedEvents : undefined,
             balls: ballsRef.current.map((b) => ({
               x: b.x / w,
               y: b.y / h,
@@ -4449,7 +4252,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [difficulty, isPaused, multiplayerManager, onActivePowerUpsChange, onComboChange, onGameOver, onRallyChange, onScoreUpdate, resetBall, updateSensorDifficulty]);
+  }, [difficulty, isPaused, onActivePowerUpsChange, onComboChange, onGameOver, onRallyChange, onScoreUpdate, resetBall, updateSensorDifficulty]);
 
   return (
     <div
