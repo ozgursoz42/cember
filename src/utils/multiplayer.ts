@@ -325,13 +325,16 @@ export class MultiplayerManager {
       // Periodically announce presence so joining guests immediately see host
       if (this.presenceInterval) clearInterval(this.presenceInterval);
       this.presenceInterval = window.setInterval(() => {
-        if (this.roomCode === cleanCode) {
+        if (this.status === 'waiting_for_peer' && this.roomCode === cleanCode) {
           this.send({
             type: 'HOST_PRESENCE',
             code: cleanCode,
             profile: this.myProfile,
             targetScore: this.targetScore,
           });
+        } else if (this.status === 'connected' && this.presenceInterval) {
+          clearInterval(this.presenceInterval);
+          this.presenceInterval = null;
         }
       }, 1200);
 
@@ -409,7 +412,7 @@ export class MultiplayerManager {
 
     switch (msg.type) {
       case 'HOST_PRESENCE': {
-        if (this.role === 'guest') {
+        if (this.role === 'guest' && (this.status as ConnectionStatus) !== 'connected') {
           this.opponentProfile = msg.profile;
           if (msg.targetScore) {
             this.targetScore = msg.targetScore;
@@ -431,9 +434,14 @@ export class MultiplayerManager {
       }
 
       case 'HANDSHAKE': {
+        const wasNotConnected = (this.status as ConnectionStatus) !== 'connected';
         this.opponentProfile = msg.profile;
         if (msg.targetScore && this.role === 'guest') {
           this.targetScore = msg.targetScore;
+        }
+        if (this.presenceInterval) {
+          clearInterval(this.presenceInterval);
+          this.presenceInterval = null;
         }
         // If I am host, reply with ACK and my profile
         if (this.role === 'host') {
@@ -444,12 +452,15 @@ export class MultiplayerManager {
           });
         }
         this.setStatus('connected');
-        this.notify('handshake_received', msg.profile);
+        if (wasNotConnected) {
+          this.notify('handshake_received', msg.profile);
+        }
         this.startPingLoop();
         break;
       }
 
       case 'HANDSHAKE_ACK': {
+        const wasNotConnected = (this.status as ConnectionStatus) !== 'connected';
         this.opponentProfile = msg.profile;
         if (msg.targetScore) {
           this.targetScore = msg.targetScore;
@@ -458,8 +469,14 @@ export class MultiplayerManager {
           clearInterval(this.handshakeInterval);
           this.handshakeInterval = null;
         }
+        if (this.presenceInterval) {
+          clearInterval(this.presenceInterval);
+          this.presenceInterval = null;
+        }
         this.setStatus('connected');
-        this.notify('handshake_received', msg.profile);
+        if (wasNotConnected) {
+          this.notify('handshake_received', msg.profile);
+        }
         this.startPingLoop();
         break;
       }
@@ -564,7 +581,20 @@ export class MultiplayerManager {
   public sendGameState(state: NetworkGameStatePayload) {
     if (this.role === 'host') {
       const now = performance.now();
-      if (now - this.lastStateSent >= 22 || state.isRoundResetting || state.soundEvent || state.gameOver) {
+      if (state.gameOver) {
+        // Guaranteed burst delivery for game over
+        const sendGameOver = () => {
+          this.send({ type: 'STATE', data: state });
+        };
+        sendGameOver();
+        setTimeout(sendGameOver, 50);
+        setTimeout(sendGameOver, 120);
+        setTimeout(sendGameOver, 250);
+        setTimeout(sendGameOver, 500);
+        return;
+      }
+
+      if (now - this.lastStateSent >= 20 || state.isRoundResetting || state.soundEvent) {
         this.lastStateSent = now;
         this.send({ type: 'STATE', data: state });
       }

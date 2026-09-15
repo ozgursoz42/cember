@@ -47,6 +47,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
   const managerRef = useRef<MultiplayerManager | null>(null);
   const hasStartedMatchRef = useRef<boolean>(false);
+  const hasPlayedCheerRef = useRef<boolean>(false);
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('idle');
   const [opponentTeam, setOpponentTeam] = useState<CountryTeam | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -105,7 +106,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           const prof = net.opponentProfile;
           if (prof && prof.team) {
             setOpponentTeam(prof.team);
-            soundEngine.playTrophyCheer();
+            if (!hasPlayedCheerRef.current) {
+              hasPlayedCheerRef.current = true;
+              soundEngine.playTrophyCheer();
+            }
           }
         }
       });
@@ -206,7 +210,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
         const prof = net.opponentProfile;
         if (prof && prof.team) {
           setOpponentTeam(prof.team);
-          soundEngine.playTrophyCheer();
+          if (!hasPlayedCheerRef.current) {
+            hasPlayedCheerRef.current = true;
+            soundEngine.playTrophyCheer();
+          }
         }
       }
 

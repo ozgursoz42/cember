@@ -280,6 +280,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const launcherFlashRef = useRef<number>(0);
   const powerUpToastRef = useRef<{ title: string; subtitle: string; color: string; icon: string; timer: number } | null>(null);
   const lastReportedStatusKeyRef = useRef<string>('');
+  const hasTriggeredGameOverRef = useRef<boolean>(false);
 
   // Spawn visual particles
   const spawnHitParticles = (
@@ -1065,16 +1066,50 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
 
-        // Sync Balls
+        // 1. Handle Game Over received from Host
+        if (netState.gameOver && !hasTriggeredGameOverRef.current) {
+          hasTriggeredGameOverRef.current = true;
+          gameStateRef.current.isRunning = false;
+          const isGuestWinner = netState.gameOver.winner === 'player';
+          if (isGuestWinner) {
+            soundEngine.playWin();
+          } else {
+            soundEngine.playLose();
+          }
+          const finalGuestScore: GameScore = {
+            player: netState.score ? netState.score.opponent : gameStateRef.current.currentScore.player,
+            opponent: netState.score ? netState.score.player : gameStateRef.current.currentScore.opponent,
+            targetScore: netState.score ? netState.score.targetScore : gameStateRef.current.baseTargetScore,
+          };
+          gameStateRef.current.currentScore = finalGuestScore;
+          onGameOver(netState.gameOver.winner, netState.gameOver.stats, finalGuestScore);
+        }
+
+        // 2. Sync Balls with soft blending to eliminate stutter
         if (netState.balls && netState.balls.length > 0) {
           ballsRef.current = netState.balls.map((nb, idx) => {
             const existing = ballsRef.current[idx];
+            const targetX = (1 - nb.x) * w;
+            const targetY = (1 - nb.y) * h;
+            const targetVx = -nb.vx * (w / 360);
+            const targetVy = -nb.vy * (h / 640);
+
+            let curX = targetX;
+            let curY = targetY;
+            if (existing) {
+              const dist = Math.hypot(existing.x - targetX, existing.y - targetY);
+              if (dist < 45) {
+                curX = lerp(existing.x, targetX, 0.75);
+                curY = lerp(existing.y, targetY, 0.75);
+              }
+            }
+
             return {
               id: existing?.id || Math.random().toString(),
-              x: (1 - nb.x) * w,
-              y: (1 - nb.y) * h,
-              vx: -nb.vx * (w / 360),
-              vy: -nb.vy * (h / 640),
+              x: curX,
+              y: curY,
+              vx: targetVx,
+              vy: targetVy,
               radius: nb.radius,
               speed: nb.speed,
               baseSpeed: 290,
@@ -1091,10 +1126,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           ballRef.current = ballsRef.current[0];
         }
 
-        // Host paddle is opponent for guest
+        // 3. Host paddle is opponent for guest
         const opp = opponentPaddleRef.current;
-        opp.x = (1 - netState.hostPaddle.x) * w;
-        opp.y = (1 - netState.hostPaddle.y) * h;
+        opp.targetX = (1 - netState.hostPaddle.x) * w;
+        opp.targetY = (1 - netState.hostPaddle.y) * h;
         opp.width = (netState.hostPaddle.width / 360) * w;
         opp.isFrozen = netState.hostPaddle.isFrozen;
         opp.freezeTimer = netState.hostPaddle.freezeTimer;
@@ -1103,10 +1138,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         opp.isRocketPowered = netState.hostPaddle.isRocketPowered;
         opp.isFiery = netState.hostPaddle.isFiery;
 
-        // Guest paddle is player for guest
+        // 4. Guest paddle is player for guest (client-authoritative smooth prediction)
         const ply = playerPaddleRef.current;
-        ply.x = lerp(ply.x, (1 - netState.guestPaddle.x) * w, 0.4);
-        ply.y = lerp(ply.y, (1 - netState.guestPaddle.y) * h, 0.4);
         ply.width = (netState.guestPaddle.width / 360) * w;
         ply.isFrozen = netState.guestPaddle.isFrozen;
         ply.freezeTimer = netState.guestPaddle.freezeTimer;
@@ -1114,8 +1147,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ply.megaPaddleTimer = netState.guestPaddle.megaPaddleTimer;
         ply.isRocketPowered = netState.guestPaddle.isRocketPowered;
         ply.isFiery = netState.guestPaddle.isFiery;
+        const srvX = (1 - netState.guestPaddle.x) * w;
+        const srvY = (1 - netState.guestPaddle.y) * h;
+        if (Math.hypot(ply.x - srvX, ply.y - srvY) > 60) {
+          ply.x = lerp(ply.x, srvX, 0.35);
+          ply.y = lerp(ply.y, srvY, 0.35);
+        }
 
-        // Sensors
+        // 5. Sensors
         if (netState.sensors) {
           sensorsRef.current = netState.sensors.map((ns, idx) => {
             const existing = sensorsRef.current[idx];
@@ -1131,7 +1170,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           });
         }
 
-        // Power-ups
+        // 6. Power-ups
         if (netState.powerUps) {
           powerUpsRef.current = netState.powerUps.map((np) => ({
             id: np.id,
@@ -1148,7 +1187,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }));
         }
 
-        // Scores
+        // 7. Scores
         if (netState.score) {
           if (
             netState.score.player !== gameStateRef.current.currentScore.opponent ||
@@ -1167,7 +1206,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
         }
 
-        // Round reset & toast
+        // 8. Round reset & toast
         gameStateRef.current.isRoundResetting = netState.isRoundResetting;
         if (netState.roundBanner) {
           gameStateRef.current.roundBanner = netState.roundBanner;
@@ -1184,7 +1223,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       });
       return unsub;
     }
-  }, [isMultiplayer, multiplayerManager, multiplayerRole, onScoreUpdate]);
+  }, [isMultiplayer, multiplayerManager, multiplayerRole, onGameOver, onScoreUpdate]);
 
   // Main 60FPS Game Loop
   useEffect(() => {
@@ -1236,6 +1275,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           targetY: player.targetY / h,
           isSmash: gyro.isForwardThrust,
         });
+
+        // Guest local paddle & ball continuous 60FPS interpolation (0ms lag)
+        if (!isPaused && state.isRunning) {
+          const prevPlyX = player.x;
+          const prevPlyY = player.y;
+          player.x = lerp(player.x, player.targetX, 0.45);
+          player.y = lerp(player.y, player.targetY, 0.45);
+          player.vx = (player.x - prevPlyX) / Math.max(dt, 0.001);
+          player.vy = (player.y - prevPlyY) / Math.max(dt, 0.001);
+
+          const opp = opponentPaddleRef.current;
+          opp.x = lerp(opp.x, opp.targetX, 0.35);
+          opp.y = lerp(opp.y, opp.targetY, 0.35);
+
+          // Smoothly extrapolate balls between network updates to eliminate stutter
+          for (const b of ballsRef.current) {
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            if (b.x - b.radius < 0) {
+              b.x = b.radius;
+              b.vx = Math.abs(b.vx);
+            } else if (b.x + b.radius > w) {
+              b.x = w - b.radius;
+              b.vx = -Math.abs(b.vx);
+            }
+          }
+        }
       }
 
       // Only update physics if not paused and (not guest in multiplayer)
@@ -2164,18 +2230,49 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 const isPlayerWin = p >= target && (!inOvertime || p - o >= 2);
 
                 if (isPlayerWin) {
-                  // Game Over - Victory!
+                  // Game Over - Victory for Host!
                   state.isRunning = false;
+                  hasTriggeredGameOverRef.current = true;
                   const matchDurationSec = (Date.now() - state.matchStartTime) / 1000;
-                  soundEngine.playWin();
-                  onGameOver('player', {
+                  const hostStats: GameStats = {
                     maxCombo: state.maxCombo,
                     totalVolleys: state.totalVolleysCount,
                     sensorHits: state.sensorHitsCount,
                     matchDurationSec,
                     winner: 'player',
                     powerUpsCollected: state.powerUpsCollectedCount,
-                  }, newScore);
+                  };
+                  const guestStats: GameStats = {
+                    maxCombo: state.maxCombo,
+                    totalVolleys: state.totalVolleysCount,
+                    sensorHits: state.sensorHitsCount,
+                    matchDurationSec,
+                    winner: 'opponent',
+                    powerUpsCollected: state.powerUpsCollectedCount,
+                  };
+
+                  if (isMultiplayer && multiplayerRole === 'host' && multiplayerManager) {
+                    multiplayerManager.sendGameState({
+                      t: currentTime,
+                      balls: [],
+                      hostPaddle: { x: playerPaddleRef.current.x / w, y: playerPaddleRef.current.y / h, width: (playerPaddleRef.current.width / w) * 360, isFrozen: false, freezeTimer: 0, isMegaPaddle: false, megaPaddleTimer: 0, isRocketPowered: false, isFiery: false },
+                      guestPaddle: { x: opponentPaddleRef.current.x / w, y: opponentPaddleRef.current.y / h, width: (opponentPaddleRef.current.width / w) * 360, isFrozen: false, freezeTimer: 0, isMegaPaddle: false, megaPaddleTimer: 0, isRocketPowered: false, isFiery: false },
+                      sensors: [],
+                      powerUps: [],
+                      score: {
+                        player: newScore.player,
+                        opponent: newScore.opponent,
+                        targetScore: newScore.targetScore,
+                      },
+                      gameOver: {
+                        winner: 'opponent', // Guest lost
+                        stats: guestStats,
+                      },
+                    });
+                  }
+
+                  soundEngine.playWin();
+                  onGameOver('player', hostStats, newScore);
                 } else {
                   updateSensorDifficulty();
                 }
@@ -2255,18 +2352,49 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
                 const isOpponentWin = o >= target && (!inOvertime || o - p >= 2);
 
                 if (isOpponentWin) {
-                  // Game Over - Defeat!
+                  // Game Over - Defeat for Host, Victory for Guest!
                   state.isRunning = false;
+                  hasTriggeredGameOverRef.current = true;
                   const matchDurationSec = (Date.now() - state.matchStartTime) / 1000;
-                  soundEngine.playLose();
-                  onGameOver('opponent', {
+                  const hostStats: GameStats = {
                     maxCombo: state.maxCombo,
                     totalVolleys: state.totalVolleysCount,
                     sensorHits: state.sensorHitsCount,
                     matchDurationSec,
                     winner: 'opponent',
                     powerUpsCollected: state.powerUpsCollectedCount,
-                  }, newScore);
+                  };
+                  const guestStats: GameStats = {
+                    maxCombo: state.maxCombo,
+                    totalVolleys: state.totalVolleysCount,
+                    sensorHits: state.sensorHitsCount,
+                    matchDurationSec,
+                    winner: 'player',
+                    powerUpsCollected: state.powerUpsCollectedCount,
+                  };
+
+                  if (isMultiplayer && multiplayerRole === 'host' && multiplayerManager) {
+                    multiplayerManager.sendGameState({
+                      t: currentTime,
+                      balls: [],
+                      hostPaddle: { x: playerPaddleRef.current.x / w, y: playerPaddleRef.current.y / h, width: (playerPaddleRef.current.width / w) * 360, isFrozen: false, freezeTimer: 0, isMegaPaddle: false, megaPaddleTimer: 0, isRocketPowered: false, isFiery: false },
+                      guestPaddle: { x: opponentPaddleRef.current.x / w, y: opponentPaddleRef.current.y / h, width: (opponentPaddleRef.current.width / w) * 360, isFrozen: false, freezeTimer: 0, isMegaPaddle: false, megaPaddleTimer: 0, isRocketPowered: false, isFiery: false },
+                      sensors: [],
+                      powerUps: [],
+                      score: {
+                        player: newScore.player,
+                        opponent: newScore.opponent,
+                        targetScore: newScore.targetScore,
+                      },
+                      gameOver: {
+                        winner: 'player', // Guest won!
+                        stats: guestStats,
+                      },
+                    });
+                  }
+
+                  soundEngine.playLose();
+                  onGameOver('opponent', hostStats, newScore);
                 } else {
                   updateSensorDifficulty();
                 }
