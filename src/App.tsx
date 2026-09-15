@@ -329,7 +329,7 @@ export default function App() {
   const handleQuitToMenu = useCallback(() => {
     soundEngine.playClick();
     if (multiplayerManager) {
-      multiplayerManager.destroy();
+      multiplayerManager.cleanup();
       setMultiplayerManager(null);
     }
     setIsMultiplayer(false);
@@ -391,7 +391,7 @@ export default function App() {
       // Setup rematch listener on manager
       manager.subscribe((status, payload) => {
         const data = payload as { event?: string; data?: unknown } | undefined;
-        if (data?.event === 'match_start') {
+        if (data?.event === 'match_start' || data?.event === 'game_started') {
           // Restart game for rematch
           setScore({ player: 0, opponent: 0, targetScore: tgtScore });
           setCombo(0);
@@ -412,7 +412,7 @@ export default function App() {
     soundEngine.playClick();
     if (!multiplayerManager) return;
     if (multiplayerRole === 'host') {
-      multiplayerManager.startMatch();
+      multiplayerManager.startGame();
       setScore({ player: 0, opponent: 0, targetScore: score.targetScore });
       setCombo(0);
       setRallyCount(0);

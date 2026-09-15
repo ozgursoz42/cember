@@ -1,5 +1,5 @@
 // WebRTC Peer-to-Peer Real-Time Multiplayer Manager for ÇEMBER
-// Operates serverless on Vercel and AI Studio using PeerJS WebRTC DataChannels
+// Operates serverless using PeerJS WebRTC DataChannels with STUN fallbacks
 
 import Peer, { DataConnection } from 'peerjs';
 import { CountryTeam, GameScore, GameStats, ActivePowerUpStatus } from '../types';
@@ -75,8 +75,8 @@ export interface NetworkPaddleState {
 export interface NetworkGameStatePayload {
   t: number; // timestamp
   score: GameScore;
-  rally: number;
-  combo: number;
+  rally?: number;
+  combo?: number;
   isRoundResetting: boolean;
   roundBanner: string;
   balls: NetworkBallState[];
@@ -84,7 +84,9 @@ export interface NetworkGameStatePayload {
   guestPaddle: NetworkPaddleState;
   sensors: NetworkSensorState[];
   powerUps: NetworkPowerUpState[];
-  activePowerUps: ActivePowerUpStatus[];
+  activePowerUps?: ActivePowerUpStatus[];
+  hostIceWallActive?: boolean;
+  guestIceWallActive?: boolean;
   toast?: { title: string; subtitle: string; color: string; icon: string } | null;
   soundEvent?: string;
   gameOver?: { winner: 'player' | 'opponent'; stats: GameStats } | null;
@@ -99,8 +101,9 @@ export interface NetworkInputPayload {
 
 export type NetMessage =
   | { type: 'HANDSHAKE'; profile: PlayerProfile; targetScore?: number }
+  | { type: 'HANDSHAKE_ACK'; profile: PlayerProfile; targetScore?: number }
   | { type: 'LOBBY_READY'; isReady: boolean }
-  | { type: 'START_GAME' }
+  | { type: 'START_GAME'; targetScore?: number }
   | { type: 'STATE'; data: NetworkGameStatePayload }
   | { type: 'INPUT'; data: NetworkInputPayload }
   | { type: 'PING'; sentAt: number }
@@ -108,6 +111,17 @@ export type NetMessage =
   | { type: 'REMATCH_REQ' }
   | { type: 'REMATCH_ACCEPT' }
   | { type: 'LEAVE' };
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.services.mozilla.com' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+];
 
 export class MultiplayerManager {
   private peer: Peer | null = null;
@@ -123,6 +137,9 @@ export class MultiplayerManager {
   public targetScore: number = 5;
 
   private pingInterval: number | null = null;
+  private handshakeInterval: number | null = null;
+  private connectionTimeout: number | null = null;
+
   private listeners: Set<(status: ConnectionStatus, data?: unknown) => void> = new Set();
   private stateListeners: Set<(state: NetworkGameStatePayload) => void> = new Set();
   private inputListeners: Set<(input: NetworkInputPayload) => void> = new Set();
@@ -138,6 +155,13 @@ export class MultiplayerManager {
     }
   }
 
+  public setTargetScore(target: number) {
+    this.targetScore = target;
+    if (this.conn && this.conn.open) {
+      this.send({ type: 'HANDSHAKE', profile: this.myProfile, targetScore: this.targetScore });
+    }
+  }
+
   // Create a 6-digit unique Room Code
   public static generateRoomCode(): string {
     const chars = '0123456789';
@@ -148,120 +172,175 @@ export class MultiplayerManager {
     return code;
   }
 
+  public static normalizeRoomCode(code: string): string {
+    return code.trim().replace(/[^0-9]/g, '').slice(0, 6);
+  }
+
   private getPeerId(roomCode: string): string {
-    // Unique deterministic prefix for Çember app
-    return `cember-v2-room-${roomCode.trim()}`;
+    const cleaned = MultiplayerManager.normalizeRoomCode(roomCode);
+    return `cember-v2-room-${cleaned}`;
   }
 
   // Host: Create room and listen for incoming connection
   public createRoom(roomCode: string, targetScore: number = 5): Promise<string> {
+    this.cleanup();
     this.role = 'host';
-    this.roomCode = roomCode;
+    this.roomCode = MultiplayerManager.normalizeRoomCode(roomCode);
     this.targetScore = targetScore;
     this.setStatus('initializing');
     this.errorMessage = '';
 
     return new Promise((resolve, reject) => {
-      this.cleanup();
+      const peerId = this.getPeerId(this.roomCode);
 
-      const peerId = this.getPeerId(roomCode);
-      const peer = new Peer(peerId, {
-        debug: 1,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-          ],
-        },
-      });
+      try {
+        const peer = new Peer(peerId, {
+          debug: 1,
+          config: {
+            iceServers: ICE_SERVERS,
+          },
+        });
 
-      this.peer = peer;
+        this.peer = peer;
 
-      peer.on('open', () => {
-        this.setStatus('waiting_for_peer');
-        resolve(roomCode);
-      });
+        peer.on('open', () => {
+          this.setStatus('waiting_for_peer');
+          resolve(this.roomCode);
+        });
 
-      peer.on('connection', (incomingConn) => {
-        // Accept the incoming player
-        this.conn = incomingConn;
-        this.setupConnectionHandlers(incomingConn);
-      });
+        peer.on('connection', (incomingConn) => {
+          // Accept the incoming guest player
+          this.conn = incomingConn;
+          this.setupConnectionHandlers(incomingConn);
+        });
 
-      peer.on('error', (err) => {
-        console.error('Peer host error:', err);
-        if (err.type === 'unavailable-id') {
-          this.errorMessage = 'Bu oda kodu zaten kullanımda. Lütfen yeni bir kod deneyin.';
-        } else {
-          this.errorMessage = `Bağlantı hatası: ${err.type}`;
-        }
+        peer.on('error', (err: { type?: string; message?: string }) => {
+          console.error('Peer host error:', err);
+          if (err.type === 'unavailable-id') {
+            this.errorMessage = 'Bu oda kodu şu an meşgul. Lütfen yeni kod üretin.';
+          } else {
+            this.errorMessage = `Bağlantı hatası: ${err.message || err.type || 'Bilinmeyen hata'}`;
+          }
+          this.setStatus('error');
+          reject(err);
+        });
+      } catch (e) {
+        console.error('Peer initialization exception:', e);
+        this.errorMessage = 'WebRTC başlatılamadı. Tarayıcınızı kontrol edin.';
         this.setStatus('error');
-        reject(err);
-      });
+        reject(e);
+      }
     });
   }
 
   // Guest: Join room with 6-digit code
   public joinRoom(roomCode: string): Promise<void> {
+    this.cleanup();
     this.role = 'guest';
-    this.roomCode = roomCode;
+    const cleanedCode = MultiplayerManager.normalizeRoomCode(roomCode);
+    this.roomCode = cleanedCode;
     this.setStatus('initializing');
     this.errorMessage = '';
 
     return new Promise((resolve, reject) => {
-      this.cleanup();
-
       // Guest creates random peer ID
-      const guestPeerId = `cember-guest-${Math.random().toString(36).substring(2, 9)}`;
-      const peer = new Peer(guestPeerId, {
-        debug: 1,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-          ],
-        },
-      });
+      const guestPeerId = `cember-guest-${Math.random().toString(36).substring(2, 10)}`;
 
-      this.peer = peer;
+      try {
+        const peer = new Peer(guestPeerId, {
+          debug: 1,
+          config: {
+            iceServers: ICE_SERVERS,
+          },
+        });
 
-      peer.on('open', () => {
-        this.setStatus('connecting');
-        const hostPeerId = this.getPeerId(roomCode);
-        const connection = peer.connect(hostPeerId, { reliable: false });
-        this.conn = connection;
-        this.setupConnectionHandlers(connection);
-        resolve();
-      });
+        this.peer = peer;
 
-      peer.on('error', (err) => {
-        console.error('Peer guest error:', err);
-        if (err.type === 'peer-unavailable') {
-          this.errorMessage = 'Oda bulunamadı! Lütfen oda kodunu kontrol edin veya kurucunun odayı açtığından emin olun.';
-        } else {
-          this.errorMessage = `Bağlantı hatası: ${err.type}`;
-        }
+        // Set a 12-second safety timeout for joining
+        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = window.setTimeout(() => {
+          if (this.status !== 'connected') {
+            this.errorMessage = 'Odaya bağlanılamadı. Kurucunun "Oda Kur" ekranında beklediğinden emin olun.';
+            this.setStatus('error');
+            reject(new Error('Connection timed out'));
+          }
+        }, 12000);
+
+        peer.on('open', () => {
+          this.setStatus('connecting');
+          const hostPeerId = this.getPeerId(cleanedCode);
+
+          // Connect using reliable WebRTC connection to ensure delivery
+          const connection = peer.connect(hostPeerId, {
+            reliable: true,
+          });
+
+          this.conn = connection;
+          this.setupConnectionHandlers(connection);
+          resolve();
+        });
+
+        peer.on('error', (err: { type?: string; message?: string }) => {
+          console.error('Peer guest error:', err);
+          if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+          if (err.type === 'peer-unavailable') {
+            this.errorMessage = 'Oda bulunamadı! Lütfen oda kodunu kontrol edin veya kurucunun odayı açtığından emin olun.';
+          } else {
+            this.errorMessage = `Bağlantı hatası: ${err.message || err.type || 'Bilinmeyen hata'}`;
+          }
+          this.setStatus('error');
+          reject(err);
+        });
+      } catch (e) {
+        console.error('Peer join exception:', e);
+        this.errorMessage = 'WebRTC başlatılamadı.';
         this.setStatus('error');
-        reject(err);
-      });
+        reject(e);
+      }
     });
   }
 
   private setupConnectionHandlers(connection: DataConnection) {
-    connection.on('open', () => {
+    const handleOpen = () => {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
       this.setStatus('connected');
-      // Send handshake immediately
+
+      // Send initial handshake immediately
       this.send({
         type: 'HANDSHAKE',
         profile: this.myProfile,
         targetScore: this.targetScore,
       });
 
+      // Continuous handshake resend every 500ms until opponent handshake is established
+      if (this.handshakeInterval) clearInterval(this.handshakeInterval);
+      this.handshakeInterval = window.setInterval(() => {
+        if (!this.opponentProfile && this.conn && this.conn.open) {
+          this.send({
+            type: 'HANDSHAKE',
+            profile: this.myProfile,
+            targetScore: this.targetScore,
+          });
+        } else if (this.opponentProfile) {
+          if (this.handshakeInterval) {
+            clearInterval(this.handshakeInterval);
+            this.handshakeInterval = null;
+          }
+        }
+      }, 500);
+
       // Start ping loop
       this.startPingLoop();
-    });
+    };
+
+    if (connection.open) {
+      handleOpen();
+    } else {
+      connection.on('open', handleOpen);
+    }
 
     connection.on('data', (raw: unknown) => {
       this.handleIncomingMessage(raw as NetMessage);
@@ -286,6 +365,21 @@ export class MultiplayerManager {
         if (msg.targetScore && this.role === 'guest') {
           this.targetScore = msg.targetScore;
         }
+        // Send ACK and our profile back
+        this.send({
+          type: 'HANDSHAKE_ACK',
+          profile: this.myProfile,
+          targetScore: this.targetScore,
+        });
+        this.notify('handshake_received', msg.profile);
+        break;
+      }
+
+      case 'HANDSHAKE_ACK': {
+        this.opponentProfile = msg.profile;
+        if (msg.targetScore && this.role === 'guest') {
+          this.targetScore = msg.targetScore;
+        }
         this.notify('handshake_received', msg.profile);
         break;
       }
@@ -299,7 +393,11 @@ export class MultiplayerManager {
       }
 
       case 'START_GAME': {
+        if (msg.targetScore) {
+          this.targetScore = msg.targetScore;
+        }
         this.notify('game_started');
+        this.notify('match_start');
         break;
       }
 
@@ -368,9 +466,19 @@ export class MultiplayerManager {
 
   public startGame() {
     if (this.role === 'host') {
-      this.send({ type: 'START_GAME' });
+      this.send({ type: 'START_GAME', targetScore: this.targetScore });
+      // Send a second packet to ensure delivery
+      setTimeout(() => {
+        this.send({ type: 'START_GAME', targetScore: this.targetScore });
+      }, 80);
       this.notify('game_started');
+      this.notify('match_start');
     }
+  }
+
+  // Aliases for seamless compatibility
+  public startMatch() {
+    this.startGame();
   }
 
   public requestRematch() {
@@ -417,6 +525,14 @@ export class MultiplayerManager {
   }
 
   public cleanup() {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+    if (this.handshakeInterval) {
+      clearInterval(this.handshakeInterval);
+      this.handshakeInterval = null;
+    }
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
@@ -441,5 +557,10 @@ export class MultiplayerManager {
     this.role = null;
     this.opponentProfile = null;
     this.status = 'idle';
+  }
+
+  // Alias for safety
+  public destroy() {
+    this.cleanup();
   }
 }

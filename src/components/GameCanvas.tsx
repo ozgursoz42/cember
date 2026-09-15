@@ -360,16 +360,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ball.radius = 11;
     ball.isMini = false;
 
-    // Difficulty base speed (supporting easiest, easy, casual, pro, chaos + stage bonus)
-    let diffBase = 290;
-    if (difficulty === 'easiest') diffBase = 225;
-    else if (difficulty === 'easy') diffBase = 255;
-    else if (difficulty === 'casual') diffBase = 290;
-    else if (difficulty === 'pro') diffBase = 335;
-    else if (difficulty === 'chaos') diffBase = 380;
+    // Difficulty base speed (supporting easiest, easy, casual, pro, chaos + scaled stage bonus)
+    let diffBase = 280;
+    let stageBonusRatio = 1.0;
+    if (difficulty === 'easiest') {
+      diffBase = 240;
+      stageBonusRatio = 0.55;
+    } else if (difficulty === 'easy') {
+      diffBase = 260;
+      stageBonusRatio = 0.75;
+    } else if (difficulty === 'casual') {
+      diffBase = 280;
+      stageBonusRatio = 1.0;
+    } else if (difficulty === 'pro') {
+      diffBase = 330;
+      stageBonusRatio = 1.0;
+    } else if (difficulty === 'chaos') {
+      diffBase = 375;
+      stageBonusRatio = 1.15;
+    }
 
     if (stage?.ballSpeedBonus) {
-      diffBase += stage.ballSpeedBonus;
+      diffBase += stage.ballSpeedBonus * stageBonusRatio;
     }
 
     ball.baseSpeed = diffBase;
@@ -918,8 +930,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         s.y = h / 2;
       });
 
-      const playerW = difficulty === 'easiest' ? 94 : difficulty === 'easy' ? 88 : 84;
-      const oppW = difficulty === 'easiest' ? 74 : difficulty === 'easy' ? 78 : 84;
+      const playerW = difficulty === 'easiest' ? 88 : difficulty === 'easy' ? 86 : 84;
+      const oppW = 84;
       if (!playerPaddleRef.current.isMegaPaddle && playerPaddleRef.current.extensionLevel === 0 && playerPaddleRef.current.shrinkLevel === 0) {
         playerPaddleRef.current.width = playerW;
         playerPaddleRef.current.baseWidth = playerW;
@@ -971,6 +983,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       playerPaddleRef.current.targetX = clampedX;
       playerPaddleRef.current.targetY = clampedY;
+
+      if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
+        multiplayerManager.sendInput({
+          t: Date.now(),
+          targetX: clampedX / w,
+          targetY: clampedY / h,
+        });
+      }
     };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -989,6 +1009,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         soundEngine.playSmashHit();
         spawnHitParticles(ball.x, ball.y, '#22d3ee', 16, 1.5);
         spawnShockwave(ball.x, ball.y, '#22d3ee', 60);
+
+        if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
+          const w = gameStateRef.current.width;
+          const h = gameStateRef.current.height;
+          multiplayerManager.sendInput({
+            t: Date.now(),
+            targetX: paddle.targetX / w,
+            targetY: paddle.targetY / h,
+            isSmash: true,
+          });
+        }
       }
     };
 
@@ -1375,13 +1406,33 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           } else {
             // Dynamic 2D AI behavior with forward/backward movement fully active
             let baseAi = 0.12;
-            if (difficulty === 'easiest') baseAi = 0.065;
-            else if (difficulty === 'easy') baseAi = 0.095;
-            else if (difficulty === 'casual') baseAi = 0.135;
-            else if (difficulty === 'pro') baseAi = 0.19;
-            else if (difficulty === 'chaos') baseAi = 0.28;
+            let aiStageRatio = 1.0;
+            let maxAiCap = 0.35;
 
-            const aiSpeedMultiplier = baseAi + (stage?.aiSpeedBonus || 0);
+            if (difficulty === 'easiest') {
+              baseAi = 0.085;
+              aiStageRatio = 0.55;
+              maxAiCap = 0.16;
+            } else if (difficulty === 'easy') {
+              baseAi = 0.105;
+              aiStageRatio = 0.75;
+              maxAiCap = 0.20;
+            } else if (difficulty === 'casual') {
+              baseAi = 0.125;
+              aiStageRatio = 1.0;
+              maxAiCap = 0.25;
+            } else if (difficulty === 'pro') {
+              baseAi = 0.18;
+              aiStageRatio = 1.0;
+              maxAiCap = 0.32;
+            } else if (difficulty === 'chaos') {
+              baseAi = 0.26;
+              aiStageRatio = 1.15;
+              maxAiCap = 0.42;
+            }
+
+            const rawAiSpeed = baseAi + ((stage?.aiSpeedBonus || 0) * aiStageRatio);
+            const aiSpeedMultiplier = Math.min(rawAiSpeed, maxAiCap);
 
             // In case of split or multi balls, AI tracks the most immediate incoming threat
             let targetBall = ballsRef.current[0] || ball;
@@ -1409,17 +1460,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             // 2D Movement calculation (X and Y forward rush/retreat fully enabled)
             const oppHalfW = opponent.width / 2;
             const topBoundary = 25;
-            const maxRushDepth = h * 0.44; // Forward rush runway up to 44% of arena height
+            const maxRushDepth = h * 0.44;
 
             if (targetBall.vy < 0) {
               // Ball heading towards opponent: line up X, rush forward to smash or intercept
-              // On easiest/easy, slight natural variance gives player great opportunities to score on angles
-              const variance = difficulty === 'easiest' ? Math.sin(currentTime * 0.002) * 14 : difficulty === 'easy' ? Math.sin(currentTime * 0.0025) * 8 : 0;
+              const variance = difficulty === 'easiest'
+                ? Math.sin(currentTime * 0.002) * 10
+                : difficulty === 'easy'
+                ? Math.sin(currentTime * 0.0025) * 5
+                : 0;
               const targetX = targetBall.x + variance;
               opponent.targetX = clamp(targetX, oppHalfW + 8, w - oppHalfW - 8);
 
-              // RUSH FORWARD TO SMASH! Leaves goal behind vulnerable to fast/angled counter-attacks
-              if (targetBall.y < h * 0.38 && targetBall.y > 55) {
+              // RUSH FORWARD TO SMASH! Moves forward in 2D naturally across all difficulties
+              if (targetBall.y < h * 0.40 && targetBall.y > 55) {
                 opponent.targetY = clamp(targetBall.y - 12, topBoundary, maxRushDepth);
               } else {
                 opponent.targetY = lerp(opponent.targetY, 40, 0.1);
@@ -2474,7 +2528,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             score: {
               player: state.currentScore.player,
               opponent: state.currentScore.opponent,
-              targetScore: state.targetScore,
+              targetScore: state.baseTargetScore,
             },
             hostIceWallActive: playerIceWallRef.current.active,
             guestIceWallActive: opponentIceWallRef.current.active,

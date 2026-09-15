@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Users,
   Copy,
@@ -11,7 +11,7 @@ import {
   Share2,
   Trophy,
   Activity,
-  Zap,
+  AlertCircle,
 } from 'lucide-react';
 import { CountryTeam } from '../types';
 import { TOURNAMENT_COUNTRIES } from '../data/tournamentData';
@@ -45,7 +45,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const [copied, setCopied] = useState<boolean>(false);
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
 
-  const [manager, setManager] = useState<MultiplayerManager | null>(null);
+  const managerRef = useRef<MultiplayerManager | null>(null);
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('idle');
   const [opponentTeam, setOpponentTeam] = useState<CountryTeam | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -63,12 +63,21 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     }
   }, []);
 
-  // Initialize or re-create Host Room
+  // Cleanup active manager
+  const cleanupManager = useCallback(() => {
+    if (managerRef.current) {
+      managerRef.current.cleanup();
+      managerRef.current = null;
+    }
+    setConnStatus('idle');
+    setOpponentTeam(null);
+  }, []);
+
+  // Initialize Host Room
   const initHostRoom = useCallback(
     (codeToUse: string, scoreVal: number, teamVal: CountryTeam) => {
-      soundEngine.playClick();
+      cleanupManager();
       setErrorMessage('');
-      setOpponentTeam(null);
 
       const net = new MultiplayerManager({
         name: teamVal.name,
@@ -76,11 +85,13 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
         isReady: true,
       });
 
-      setManager(net);
+      managerRef.current = net;
 
       net.subscribe((status, payload) => {
         setConnStatus(status);
-        if (net.errorMessage) setErrorMessage(net.errorMessage);
+        if (net.errorMessage) {
+          setErrorMessage(net.errorMessage);
+        }
 
         const data = payload as { event?: string; data?: unknown } | undefined;
         if (data?.event === 'handshake_received') {
@@ -96,27 +107,32 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
         console.error('Failed to create room:', err);
       });
     },
-    []
+    [cleanupManager]
   );
 
-  // Initialize Host room when tab is 'create' on mount or when regenerates
+  // Host room creation triggered when tab is 'create' or roomCode regenerated
   useEffect(() => {
     if (tab === 'create') {
       initHostRoom(roomCode, targetScore, selectedTeam);
+    } else {
+      cleanupManager();
     }
-    return () => {
-      // clean up when leaving
-    };
-  }, [tab, roomCode, initHostRoom, selectedTeam, targetScore]);
+  }, [tab, roomCode, initHostRoom, cleanupManager]);
+
+  // Update profile or score on active host room without tearing down WebRTC
+  useEffect(() => {
+    if (tab === 'create' && managerRef.current) {
+      managerRef.current.setMyProfile({ name: selectedTeam.name, team: selectedTeam });
+      managerRef.current.setTargetScore(targetScore);
+    }
+  }, [selectedTeam, targetScore, tab]);
 
   // Clean up on component unmount
   useEffect(() => {
     return () => {
-      if (manager) {
-        manager.cleanup();
-      }
+      cleanupManager();
     };
-  }, [manager]);
+  }, [cleanupManager]);
 
   // Copy 6-digit Code
   const handleCopyCode = async () => {
@@ -145,18 +161,21 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
   // Generate new code for Host
   const handleGenerateNewCode = () => {
+    soundEngine.playClick();
     const newCode = MultiplayerManager.generateRoomCode();
     setRoomCode(newCode);
   };
 
   // Join Room Handler
   const handleJoinRoom = () => {
-    if (!joinCodeInput || joinCodeInput.trim().length < 4) {
+    const cleanedCode = MultiplayerManager.normalizeRoomCode(joinCodeInput);
+    if (!cleanedCode || cleanedCode.length < 4) {
       setErrorMessage('Lütfen geçerli bir 6 haneli oda kodu girin.');
       return;
     }
 
     soundEngine.playClick();
+    cleanupManager();
     setErrorMessage('');
     setOpponentTeam(null);
 
@@ -166,7 +185,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       isReady: true,
     });
 
-    setManager(net);
+    managerRef.current = net;
 
     net.subscribe((status, payload) => {
       setConnStatus(status);
@@ -181,23 +200,24 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
         }
       }
 
-      if (data?.event === 'game_started') {
+      if (data?.event === 'game_started' || data?.event === 'match_start') {
         const opp = net.opponentProfile?.team || TOURNAMENT_COUNTRIES[0];
         onStartOnlineMatch(net, 'guest', selectedTeam, opp, net.targetScore || 5);
       }
     });
 
-    net.joinRoom(joinCodeInput.trim()).catch((err) => {
+    net.joinRoom(cleanedCode).catch((err) => {
       console.error('Join error:', err);
     });
   };
 
   // Host starts the game
   const handleHostStartGame = () => {
-    if (!manager || !opponentTeam) return;
+    const net = managerRef.current;
+    if (!net || !opponentTeam) return;
     soundEngine.playClick();
-    manager.startGame();
-    onStartOnlineMatch(manager, 'host', selectedTeam, opponentTeam, targetScore);
+    net.startGame();
+    onStartOnlineMatch(net, 'host', selectedTeam, opponentTeam, targetScore);
   };
 
   return (
@@ -208,7 +228,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           id="back-to-menu-from-mp"
           onClick={() => {
             soundEngine.playClick();
-            if (manager) manager.cleanup();
+            cleanupManager();
             onBackToMenu();
           }}
           className="p-2 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition active:scale-95 flex items-center gap-1 text-xs font-bold"
@@ -229,9 +249,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           <button
             id="tab-create-room"
             onClick={() => {
-              soundEngine.playClick();
-              if (manager) manager.cleanup();
-              setTab('create');
+              if (tab !== 'create') {
+                soundEngine.playClick();
+                setTab('create');
+              }
             }}
             className={`py-2 rounded-xl text-xs font-black tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               tab === 'create'
@@ -245,9 +266,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           <button
             id="tab-join-room"
             onClick={() => {
-              soundEngine.playClick();
-              if (manager) manager.cleanup();
-              setTab('join');
+              if (tab !== 'join') {
+                soundEngine.playClick();
+                setTab('join');
+              }
             }}
             className={`py-2 rounded-xl text-xs font-black tracking-wider transition-all flex items-center justify-center gap-1.5 ${
               tab === 'join'
@@ -388,12 +410,12 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                 </div>
                 {!opponentTeam && (
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    Arkadaşına 6 haneli oda kodunu iletin.
+                    Arkadaşınıza 6 haneli oda kodunu iletin.
                   </div>
                 )}
               </div>
               {opponentTeam ? (
-                <span className="px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 text-[10px] font-black">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-400 text-slate-950 text-[11px] font-black">
                   HAZIR ✓
                 </span>
               ) : (
@@ -448,13 +470,13 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
               <button
                 id="connect-room-btn"
                 onClick={handleJoinRoom}
-                disabled={joinCodeInput.length < 4 || connStatus === 'connecting'}
+                disabled={joinCodeInput.trim().length < 4 || connStatus === 'connecting' || connStatus === 'initializing'}
                 className="mt-3 w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition"
               >
-                {connStatus === 'connecting' ? (
+                {connStatus === 'connecting' || connStatus === 'initializing' ? (
                   <>
                     <Activity className="w-4 h-4 animate-spin" />
-                    <span>BAĞLANILIYOR...</span>
+                    <span>BAĞLANTI KURULUYOR...</span>
                   </>
                 ) : (
                   <>
@@ -467,20 +489,22 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
             {/* Guest Connection Status */}
             {connStatus === 'connected' && (
-              <div className="w-full p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/60 flex items-center gap-3">
+              <div className="w-full p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500 flex items-center gap-3 animate-in fade-in">
                 <div className="w-10 h-10 rounded-xl bg-emerald-900/50 border border-emerald-400 flex items-center justify-center text-xl">
                   {opponentTeam ? opponentTeam.flag : '👑'}
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-bold text-emerald-400 uppercase">ODAYA BAĞLANDI!</div>
-                  <div className="text-xs font-black text-white">
-                    {opponentTeam ? `Kurucu: ${opponentTeam.name}` : 'Kurucu bekleniyor...'}
+                  <div className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-1">
+                    <span>ODAYA BAĞLANDI!</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
                   </div>
-                  <div className="text-[10px] text-slate-300 mt-0.5">
+                  <div className="text-xs font-black text-white">
+                    {opponentTeam ? `Kurucu: ${opponentTeam.name}` : 'Kurucu bilgisi alınıyor...'}
+                  </div>
+                  <div className="text-[10px] text-slate-300 mt-0.5 font-medium">
                     Kurucu oyunu başlattığında maç otomatik açılacaktır.
                   </div>
                 </div>
-                <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
               </div>
             )}
           </div>
@@ -488,8 +512,9 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
         {/* Error Message */}
         {errorMessage && (
-          <div className="w-full mt-3 p-3 rounded-xl bg-rose-950/60 border border-rose-600/50 text-rose-200 text-xs font-bold text-center">
-            {errorMessage}
+          <div className="w-full mt-3 p-3 rounded-xl bg-rose-950/70 border border-rose-600/60 text-rose-200 text-xs font-bold text-center flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{errorMessage}</span>
           </div>
         )}
       </div>
@@ -512,7 +537,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           </button>
         ) : (
           <div className="text-center text-[11px] text-slate-400 font-medium py-1">
-            📱 Sıfır gecikmeli WebRTC P2P bağlantısı ile doğrudan telefonlar arası çalışır.
+            📱 Sıfır gecikmeli WebRTC P2P bağlantısı ile doğrudan cihazlar arası oynanır.
           </div>
         )}
       </div>
@@ -540,9 +565,6 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     onClick={() => {
                       soundEngine.playClick();
                       setSelectedTeam(team);
-                      if (manager) {
-                        manager.setMyProfile({ name: team.name, team });
-                      }
                       setShowTeamPicker(false);
                     }}
                     className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition active:scale-95 ${
