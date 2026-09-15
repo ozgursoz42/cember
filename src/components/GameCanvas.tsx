@@ -1171,6 +1171,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ply.megaPaddleTimer = netState.guestPaddle.megaPaddleTimer;
         ply.isRocketPowered = netState.guestPaddle.isRocketPowered;
         ply.isFiery = netState.guestPaddle.isFiery;
+        const srvX = (1 - netState.guestPaddle.x) * w;
+        const srvY = (1 - netState.guestPaddle.y) * h;
+        if (Math.hypot(ply.x - srvX, ply.y - srvY) > 60) {
+          ply.x = lerp(ply.x, srvX, 0.35);
+          ply.y = lerp(ply.y, srvY, 0.35);
+        }
 
         // 5. Sensors
         if (netState.sensors) {
@@ -1493,9 +1499,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             opponent.vy = 0;
           } else if (isMultiplayer && multiplayerRole === 'host') {
             // Multiplayer Host: guest paddle position is driven by guest player input
-            // Smooth lerp (0.38) for butter-smooth movement without network jitter
-            opponent.x = lerp(opponent.x, opponent.targetX, 0.38);
-            opponent.y = lerp(opponent.y, opponent.targetY, 0.38);
+            opponent.x = lerp(opponent.x, opponent.targetX, 0.35);
+            opponent.y = lerp(opponent.y, opponent.targetY, 0.35);
             opponent.prevX = prevOppX;
             opponent.prevY = prevOppY;
             opponent.vx = (opponent.x - prevOppX) / Math.max(dt, 0.001);
