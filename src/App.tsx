@@ -285,6 +285,16 @@ export default function App() {
     }
   }, [currentStage, handleStartStage]);
 
+  // Next Difficulty Transition in Adventure Mode (after stage 30)
+  const handleStartNextDifficulty = useCallback((nextDiff: GameDifficulty) => {
+    soundEngine.playClick();
+    setDifficulty(nextDiff);
+    setIsAdventureMode(true);
+    setIsTournamentMode(false);
+    const firstStage = ADVENTURE_STAGES[0];
+    handleStartStage(firstStage);
+  }, [handleStartStage]);
+
   // Next Match navigation in Tournament Mode
   const handleNextTournamentMatch = useCallback(() => {
     if (!currentTournamentMatch || !playerTeam) return;
@@ -586,10 +596,13 @@ export default function App() {
             score={score}
             stats={stats}
             isAdventureMode={isAdventureMode}
+            difficulty={difficulty}
+            currentStageId={currentStage?.id}
             stageTitle={currentStage?.title}
             hasNextStage={!!nextStage}
             nextStageTitle={nextStage?.title}
             onNextStage={handleNextStage}
+            onStartNextDifficulty={handleStartNextDifficulty}
             onOpenRoadmap={handleOpenRoadmap}
             unlockedBadge={unlockedBadge}
             onPlayAgain={isMultiplayer ? handleMultiplayerRematch : handlePlayAgain}
@@ -604,8 +617,8 @@ export default function App() {
             isChampion={!!tournamentProgress?.isChampion}
             isMultiplayer={isMultiplayer}
             multiplayerRole={multiplayerRole}
-            onMultiplayerRematch={handleMultiplayerRematch}
-            multiplayerRematchPending={multiplayerRematchPending}
+            onRematch={handleMultiplayerRematch}
+            rematchRequested={multiplayerRematchPending}
           />
         </>
       )}

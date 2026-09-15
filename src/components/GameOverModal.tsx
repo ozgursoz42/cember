@@ -1,7 +1,38 @@
-import React from 'react';
-import { RotateCcw, Home, Trophy, Flame, Sparkles, Clock, Target, Zap, ChevronRight, Map, Award, Star } from 'lucide-react';
-import { GameScore, GameStats, CountryTeam, TournamentMatch } from '../types';
+import React, { useState } from 'react';
+import { RotateCcw, Home, Trophy, Flame, Sparkles, Clock, Target, Zap, ChevronRight, Map, Award, Star, Crown } from 'lucide-react';
+import { GameScore, GameStats, CountryTeam, TournamentMatch, GameDifficulty } from '../types';
 import { DifficultyBadge } from '../adventureData';
+
+export const DIFFICULTY_NAMES: Record<
+  GameDifficulty,
+  { current: string; next: GameDifficulty | null; nextName: string }
+> = {
+  easiest: {
+    current: 'Easiest (Acemi)',
+    next: 'easy',
+    nextName: 'Easy (Kolay)',
+  },
+  easy: {
+    current: 'Easy (Kolay)',
+    next: 'casual',
+    nextName: 'Casual (Dengeli)',
+  },
+  casual: {
+    current: 'Casual (Dengeli)',
+    next: 'pro',
+    nextName: 'Pro (Zor)',
+  },
+  pro: {
+    current: 'Pro (Zor)',
+    next: 'chaos',
+    nextName: 'Chaos (Kozmik Kaos)',
+  },
+  chaos: {
+    current: 'Chaos (Kozmik Kaos)',
+    next: null,
+    nextName: '',
+  },
+};
 
 interface GameOverModalProps {
   score: GameScore;
@@ -9,10 +40,13 @@ interface GameOverModalProps {
   onPlayAgain: () => void;
   onMainMenu: () => void;
   isAdventureMode?: boolean;
+  difficulty?: GameDifficulty;
+  currentStageId?: number;
   stageTitle?: string;
   hasNextStage?: boolean;
   nextStageTitle?: string;
   onNextStage?: () => void;
+  onStartNextDifficulty?: (nextDiff: GameDifficulty) => void;
   onOpenRoadmap?: () => void;
   unlockedBadge?: DifficultyBadge | null;
   // Tournament Mode props
@@ -37,10 +71,13 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onPlayAgain,
   onMainMenu,
   isAdventureMode,
+  difficulty = 'easiest',
+  currentStageId,
   stageTitle,
   hasNextStage,
   nextStageTitle,
   onNextStage,
+  onStartNextDifficulty,
   onOpenRoadmap,
   unlockedBadge,
   isTournamentMode,
@@ -57,6 +94,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   rematchRequested,
 }) => {
   const isWinner = stats.winner === 'player';
+  const isFinalAdventureStage = isAdventureMode && isWinner && (currentStageId === 30 || !hasNextStage);
+  const diffInfo = DIFFICULTY_NAMES[difficulty] || DIFFICULTY_NAMES.easiest;
+
+  const [showDifficultyPrompt, setShowDifficultyPrompt] = useState<boolean>(isFinalAdventureStage);
 
   // Calculate stars in adventure mode
   const diff = score.player - score.opponent;
@@ -280,6 +321,22 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <span>SONRAKİ BÖLÜME GEÇ</span>
               <ChevronRight className="w-4 h-4 stroke-[3]" />
             </button>
+          ) : isFinalAdventureStage ? (
+            <button
+              id="next-difficulty-btn"
+              onClick={() => {
+                if (diffInfo.next && onStartNextDifficulty) {
+                  onStartNextDifficulty(diffInfo.next);
+                } else {
+                  setShowDifficultyPrompt(true);
+                }
+              }}
+              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-pink-500 to-cyan-400 text-slate-950 font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition hover:brightness-110 animate-pulse"
+            >
+              <Crown className="w-4 h-4 text-slate-950" />
+              <span>{diffInfo.next ? `EVET, ${diffInfo.nextName.toUpperCase()} BAŞLA` : 'TEBRİKLER! TÜM MODLAR BİTTİ'}</span>
+              <ChevronRight className="w-4 h-4 stroke-[3]" />
+            </button>
           ) : (
             <button
               id="play-again-btn"
@@ -323,6 +380,75 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 30. BÖLÜM ZAFER VE YENİ ZORLUK MODU POPUP PENCERESİ */}
+      {showDifficultyPrompt && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-lg animate-in fade-in zoom-in-95 duration-300 select-none">
+          <div className="relative w-full max-w-sm rounded-3xl bg-slate-900 border-2 border-amber-400/80 p-6 flex flex-col items-center text-center shadow-[0_0_50px_rgba(245,158,11,0.35)]">
+            {/* Crown decoration icon */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 shadow-xl mb-4 animate-bounce">
+              <Crown className="w-9 h-9 stroke-[2.5]" />
+            </div>
+
+            {/* Sub-badge */}
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-400/20 text-amber-300 border border-amber-400/50 mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>30. BÖLÜM ŞAMPİYONLUĞU</span>
+            </div>
+
+            {/* Main Title & Message */}
+            <h3 className="text-lg font-black text-white leading-snug mb-3">
+              {diffInfo.current} modunda tüm bölümleri başarıyla tamamladınız tebrikler!
+            </h3>
+
+            <p className="text-sm font-semibold text-slate-300 mb-6 px-1">
+              {diffInfo.next ? (
+                <span>Bir sonraki zorluk moduna geçmeye hazır mısınız?</span>
+              ) : (
+                <span>Tüm zorluk seviyelerini bitirdiniz, ÇEMBER evreninin nihai efsanesi oldunuz!</span>
+              )}
+            </p>
+
+            {/* Confirmation Buttons */}
+            <div className="w-full flex flex-col gap-2.5">
+              {diffInfo.next && onStartNextDifficulty ? (
+                <button
+                  id="accept-next-difficulty-btn"
+                  onClick={() => {
+                    setShowDifficultyPrompt(false);
+                    onStartNextDifficulty(diffInfo.next!);
+                  }}
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-rose-500 text-slate-950 font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-xl hover:brightness-110 active:scale-[0.98] transition"
+                >
+                  <Sparkles className="w-4 h-4 text-slate-950" />
+                  <span>Evet {diffInfo.nextName} modunda başla</span>
+                  <ChevronRight className="w-4 h-4 stroke-[3]" />
+                </button>
+              ) : (
+                <button
+                  id="restart-first-difficulty-btn"
+                  onClick={() => {
+                    setShowDifficultyPrompt(false);
+                    onStartNextDifficulty?.('easiest');
+                  }}
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-xl hover:brightness-110 active:scale-[0.98] transition"
+                >
+                  <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                  <span>Tekrar Easiest (Acemi) Modunda Başla</span>
+                </button>
+              )}
+
+              <button
+                id="decline-next-difficulty-btn"
+                onClick={() => setShowDifficultyPrompt(false)}
+                className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-bold text-xs tracking-wider flex items-center justify-center gap-2 border border-slate-700 active:scale-[0.98] transition"
+              >
+                <span>Hayır, teşekkürler</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
