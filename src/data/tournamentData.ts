@@ -11,6 +11,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#be123c',
     confederation: 'Avrupa',
+    flagColors: ['#e11d48', '#ffffff', '#e11d48'],
   },
   {
     id: 'brezilya',
@@ -22,6 +23,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#22c55e',
     accentColor: '#15803d',
     confederation: 'Güney Amerika',
+    flagColors: ['#16a34a', '#eab308', '#2563eb'],
   },
   {
     id: 'arjantin',
@@ -33,6 +35,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#facc15',
     confederation: 'Güney Amerika',
+    flagColors: ['#38bdf8', '#ffffff', '#38bdf8'],
   },
   {
     id: 'almanya',
@@ -44,6 +47,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#f59e0b',
     accentColor: '#f59e0b',
     confederation: 'Avrupa',
+    flagColors: ['#18181b', '#ef4444', '#f59e0b'],
   },
   {
     id: 'fransa',
@@ -55,6 +59,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ef4444',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#2563eb', '#ffffff', '#ef4444'],
   },
   {
     id: 'ingiltere',
@@ -66,6 +71,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ef4444',
     accentColor: '#dc2626',
     confederation: 'Avrupa',
+    flagColors: ['#f8fafc', '#dc2626', '#f8fafc'],
   },
   {
     id: 'ispanya',
@@ -77,6 +83,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#facc15',
     accentColor: '#ea580c',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#facc15', '#dc2626'],
   },
   {
     id: 'italya',
@@ -88,6 +95,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#22c55e',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#16a34a', '#ffffff', '#dc2626'],
   },
   {
     id: 'portekiz',
@@ -99,6 +107,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#16a34a',
     accentColor: '#facc15',
     confederation: 'Avrupa',
+    flagColors: ['#16a34a', '#dc2626', '#facc15'],
   },
   {
     id: 'hollanda',
@@ -110,6 +119,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#c2410c',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#2563eb'],
   },
   {
     id: 'belcika',
@@ -121,6 +131,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#facc15',
     accentColor: '#18181b',
     confederation: 'Avrupa',
+    flagColors: ['#18181b', '#facc15', '#dc2626'],
   },
   {
     id: 'hirvatistan',
@@ -132,6 +143,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#3b82f6',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#ef4444', '#ffffff', '#2563eb'],
   },
   {
     id: 'japonya',
@@ -143,6 +155,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ef4444',
     accentColor: '#be123c',
     confederation: 'Asya',
+    flagColors: ['#f8fafc', '#dc2626', '#f8fafc'],
   },
   {
     id: 'guney_kore',
@@ -154,6 +167,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#3b82f6',
     accentColor: '#ffffff',
     confederation: 'Asya',
+    flagColors: ['#ffffff', '#ef4444', '#2563eb'],
   },
   {
     id: 'abd',
@@ -165,6 +179,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ef4444',
     accentColor: '#ffffff',
     confederation: 'Kuzey Amerika',
+    flagColors: ['#2563eb', '#ffffff', '#dc2626'],
   },
   {
     id: 'meksika',
@@ -176,6 +191,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ef4444',
     accentColor: '#ffffff',
     confederation: 'Kuzey Amerika',
+    flagColors: ['#16a34a', '#ffffff', '#dc2626'],
   },
   {
     id: 'fas',
@@ -187,6 +203,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#16a34a',
     accentColor: '#15803d',
     confederation: 'Afrika',
+    flagColors: ['#dc2626', '#16a34a', '#dc2626'],
   },
   {
     id: 'senegal',
@@ -198,6 +215,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#facc15',
     accentColor: '#dc2626',
     confederation: 'Afrika',
+    flagColors: ['#16a34a', '#facc15', '#dc2626'],
   },
   {
     id: 'nijerya',
@@ -209,6 +227,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#15803d',
     confederation: 'Afrika',
+    flagColors: ['#16a34a', '#ffffff', '#16a34a'],
   },
   {
     id: 'misir',
@@ -220,6 +239,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#facc15',
     accentColor: '#ffffff',
     confederation: 'Afrika',
+    flagColors: ['#dc2626', '#ffffff', '#18181b'],
   },
   {
     id: 'uruguay',
@@ -231,6 +251,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#facc15',
     confederation: 'Güney Amerika',
+    flagColors: ['#38bdf8', '#ffffff', '#facc15'],
   },
   {
     id: 'kolombiya',
@@ -242,6 +263,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#dc2626',
     confederation: 'Güney Amerika',
+    flagColors: ['#facc15', '#2563eb', '#dc2626'],
   },
   {
     id: 'sili',
@@ -253,6 +275,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#ffffff',
     confederation: 'Güney Amerika',
+    flagColors: ['#2563eb', '#ffffff', '#dc2626'],
   },
   {
     id: 'isvicre',
@@ -264,6 +287,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#b91c1c',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#dc2626'],
   },
   {
     id: 'isvec',
@@ -275,6 +299,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#1d4ed8',
     confederation: 'Avrupa',
+    flagColors: ['#2563eb', '#facc15', '#2563eb'],
   },
   {
     id: 'norvec',
@@ -286,6 +311,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#2563eb'],
   },
   {
     id: 'danimarka',
@@ -297,6 +323,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#f43f5e',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#dc2626'],
   },
   {
     id: 'avusturya',
@@ -308,6 +335,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#b91c1c',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#dc2626'],
   },
   {
     id: 'polonya',
@@ -319,6 +347,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#dc2626',
     accentColor: '#ef4444',
     confederation: 'Avrupa',
+    flagColors: ['#ffffff', '#dc2626', '#ffffff'],
   },
   {
     id: 'cekya',
@@ -330,6 +359,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#2563eb', '#ffffff', '#dc2626'],
   },
   {
     id: 'sirbistan',
@@ -341,6 +371,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#2563eb',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#2563eb', '#ffffff'],
   },
   {
     id: 'yunanistan',
@@ -352,6 +383,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#38bdf8',
     confederation: 'Avrupa',
+    flagColors: ['#2563eb', '#ffffff', '#2563eb'],
   },
   {
     id: 'macaristan',
@@ -363,6 +395,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#16a34a',
     accentColor: '#ffffff',
     confederation: 'Avrupa',
+    flagColors: ['#dc2626', '#ffffff', '#16a34a'],
   },
   {
     id: 'kanada',
@@ -374,6 +407,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#ef4444',
     confederation: 'Kuzey Amerika',
+    flagColors: ['#dc2626', '#ffffff', '#dc2626'],
   },
   {
     id: 'avustralya',
@@ -385,6 +419,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#16a34a',
     accentColor: '#15803d',
     confederation: 'Asya',
+    flagColors: ['#2563eb', '#ffffff', '#dc2626'],
   },
   {
     id: 'suudi_arabistan',
@@ -396,6 +431,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#22c55e',
     confederation: 'Asya',
+    flagColors: ['#16a34a', '#ffffff', '#16a34a'],
   },
   {
     id: 'katar',
@@ -407,6 +443,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#ffffff',
     accentColor: '#9f1239',
     confederation: 'Asya',
+    flagColors: ['#881337', '#ffffff', '#881337'],
   },
   {
     id: 'iran',
@@ -418,6 +455,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#dc2626',
     accentColor: '#ffffff',
     confederation: 'Asya',
+    flagColors: ['#16a34a', '#ffffff', '#dc2626'],
   },
   {
     id: 'gana',
@@ -429,6 +467,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#dc2626',
     accentColor: '#16a34a',
     confederation: 'Afrika',
+    flagColors: ['#dc2626', '#facc15', '#16a34a'],
   },
   {
     id: 'kamerun',
@@ -440,6 +479,7 @@ export const TOURNAMENT_COUNTRIES: CountryTeam[] = [
     glowColor: '#facc15',
     accentColor: '#dc2626',
     confederation: 'Afrika',
+    flagColors: ['#16a34a', '#dc2626', '#facc15'],
   },
 ];
 

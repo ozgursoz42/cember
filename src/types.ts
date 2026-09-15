@@ -22,6 +22,7 @@ export interface CountryTeam {
   glowColor: string;
   accentColor: string;
   confederation?: string;
+  flagColors?: string[];
 }
 
 export interface TournamentMatch {
@@ -189,6 +190,7 @@ export interface Paddle {
   glowColor: string;
   isPlayer: boolean;
   hitFlash: number;
+  flagColors?: string[];
   // Power-up states
   isFrozen: boolean;
   freezeTimer: number;

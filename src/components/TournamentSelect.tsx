@@ -42,6 +42,32 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
     onSelectTeam(selectedTeam);
   };
 
+  const getFlagHorizontalGradient = (team: CountryTeam) => {
+    if (team.flagColors && team.flagColors.length > 0) {
+      const stops: string[] = [];
+      const n = team.flagColors.length;
+      team.flagColors.forEach((color, idx) => {
+        stops.push(`${color} ${(idx / n) * 100}%`);
+        stops.push(`${color} ${((idx + 1) / n) * 100}%`);
+      });
+      return `linear-gradient(to right, ${stops.join(', ')})`;
+    }
+    return team.paddleColor;
+  };
+
+  const getFlagVerticalGradient = (team: CountryTeam) => {
+    if (team.flagColors && team.flagColors.length > 0) {
+      const stops: string[] = [];
+      const n = team.flagColors.length;
+      team.flagColors.forEach((color, idx) => {
+        stops.push(`${color} ${(idx / n) * 100}%`);
+        stops.push(`${color} ${((idx + 1) / n) * 100}%`);
+      });
+      return `linear-gradient(to bottom, ${stops.join(', ')})`;
+    }
+    return team.paddleColor;
+  };
+
   return (
     <div className="relative w-full h-full flex flex-col justify-between p-4 max-w-md mx-auto select-none overflow-hidden z-20">
       {/* Top Bar Navigation */}
@@ -90,7 +116,7 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
           <div
             className="w-16 h-3.5 rounded-full border border-white/40 shadow-lg transition-all duration-300"
             style={{
-              backgroundColor: selectedTeam.paddleColor,
+              background: getFlagHorizontalGradient(selectedTeam),
               boxShadow: `0 0 12px ${selectedTeam.glowColor}`,
             }}
           />
@@ -162,7 +188,7 @@ export const TournamentSelect: React.FC<TournamentSelectProps> = ({
                 <div className="flex items-center gap-1 shrink-0 ml-1">
                   <div
                     className="w-3 h-6 rounded-full border border-white/30 shadow-inner"
-                    style={{ backgroundColor: team.paddleColor }}
+                    style={{ background: getFlagVerticalGradient(team) }}
                   />
                   {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
                 </div>

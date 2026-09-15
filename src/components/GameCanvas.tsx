@@ -152,42 +152,73 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const ballSkin = BALL_SKINS.find((b) => b.id === shop.equippedBallSkinId) || BALL_SKINS[0];
     equippedBallSkinRef.current = ballSkin;
 
-    // Player paddle skin
-    const playerSkin = PLAYER_PADDLE_SKINS.find((s) => s.id === shop.equippedPlayerSkinId);
-    if (playerSkin) {
-      playerPaddleRef.current.color = playerSkin.color;
-      playerPaddleRef.current.secondaryColor = undefined;
-      playerPaddleRef.current.glowColor = playerSkin.glowColor;
-    } else if (playerTeam) {
-      playerPaddleRef.current.color = playerTeam.paddleColor;
-      playerPaddleRef.current.secondaryColor = undefined;
-      playerPaddleRef.current.glowColor = playerTeam.glowColor;
-    } else {
-      playerPaddleRef.current.color = '#06b6d4';
-      playerPaddleRef.current.secondaryColor = undefined;
-      playerPaddleRef.current.glowColor = '#22d3ee';
-    }
+    if (isTournamentMode) {
+      // SADECE DÜNYA TURNUVASI MODUNDA:
+      // Oyuncu ve rakip çubukları ülke bayraklarının 2 veya 3 rengi ile oluşturulur
+      if (playerTeam) {
+        playerPaddleRef.current.color = playerTeam.paddleColor;
+        playerPaddleRef.current.secondaryColor = playerTeam.secondaryColor;
+        playerPaddleRef.current.glowColor = playerTeam.glowColor;
+        playerPaddleRef.current.flagColors = playerTeam.flagColors && playerTeam.flagColors.length > 0
+          ? playerTeam.flagColors
+          : [playerTeam.paddleColor, playerTeam.secondaryColor || '#ffffff', playerTeam.accentColor || playerTeam.paddleColor];
+      } else {
+        playerPaddleRef.current.flagColors = undefined;
+      }
 
-    // Opponent paddle skin
-    const oppSkin = OPPONENT_PADDLE_SKINS.find((s) => s.id === shop.equippedOpponentSkinId);
-    if (oppSkin) {
-      opponentPaddleRef.current.color = oppSkin.color;
-      opponentPaddleRef.current.secondaryColor = undefined;
-      opponentPaddleRef.current.glowColor = oppSkin.glowColor;
-    } else if (opponentTeam) {
-      opponentPaddleRef.current.color = opponentTeam.paddleColor;
-      opponentPaddleRef.current.secondaryColor = undefined;
-      opponentPaddleRef.current.glowColor = opponentTeam.glowColor;
-    } else if (stage) {
-      opponentPaddleRef.current.color = stage.opponentPaddleColor || '#f43f5e';
-      opponentPaddleRef.current.secondaryColor = undefined;
-      opponentPaddleRef.current.glowColor = stage.opponentGlowColor || '#fb7185';
+      if (opponentTeam) {
+        opponentPaddleRef.current.color = opponentTeam.paddleColor;
+        opponentPaddleRef.current.secondaryColor = opponentTeam.secondaryColor;
+        opponentPaddleRef.current.glowColor = opponentTeam.glowColor;
+        opponentPaddleRef.current.flagColors = opponentTeam.flagColors && opponentTeam.flagColors.length > 0
+          ? opponentTeam.flagColors
+          : [opponentTeam.paddleColor, opponentTeam.secondaryColor || '#ffffff', opponentTeam.accentColor || opponentTeam.paddleColor];
+      } else {
+        opponentPaddleRef.current.flagColors = undefined;
+      }
     } else {
-      opponentPaddleRef.current.color = '#f43f5e';
-      opponentPaddleRef.current.secondaryColor = undefined;
-      opponentPaddleRef.current.glowColor = '#fb7185';
+      // MACERA MODU VE HIZLI MAÇ:
+      // Bu renklendirme özelliği macera modu ve hızlı maç bölümlerini etkilemez
+      playerPaddleRef.current.flagColors = undefined;
+      opponentPaddleRef.current.flagColors = undefined;
+
+      // Player paddle skin
+      const playerSkin = PLAYER_PADDLE_SKINS.find((s) => s.id === shop.equippedPlayerSkinId);
+      if (playerSkin) {
+        playerPaddleRef.current.color = playerSkin.color;
+        playerPaddleRef.current.secondaryColor = undefined;
+        playerPaddleRef.current.glowColor = playerSkin.glowColor;
+      } else if (playerTeam) {
+        playerPaddleRef.current.color = playerTeam.paddleColor;
+        playerPaddleRef.current.secondaryColor = undefined;
+        playerPaddleRef.current.glowColor = playerTeam.glowColor;
+      } else {
+        playerPaddleRef.current.color = '#06b6d4';
+        playerPaddleRef.current.secondaryColor = undefined;
+        playerPaddleRef.current.glowColor = '#22d3ee';
+      }
+
+      // Opponent paddle skin
+      const oppSkin = OPPONENT_PADDLE_SKINS.find((s) => s.id === shop.equippedOpponentSkinId);
+      if (oppSkin) {
+        opponentPaddleRef.current.color = oppSkin.color;
+        opponentPaddleRef.current.secondaryColor = undefined;
+        opponentPaddleRef.current.glowColor = oppSkin.glowColor;
+      } else if (opponentTeam) {
+        opponentPaddleRef.current.color = opponentTeam.paddleColor;
+        opponentPaddleRef.current.secondaryColor = undefined;
+        opponentPaddleRef.current.glowColor = opponentTeam.glowColor;
+      } else if (stage) {
+        opponentPaddleRef.current.color = stage.opponentPaddleColor || '#f43f5e';
+        opponentPaddleRef.current.secondaryColor = undefined;
+        opponentPaddleRef.current.glowColor = stage.opponentGlowColor || '#fb7185';
+      } else {
+        opponentPaddleRef.current.color = '#f43f5e';
+        opponentPaddleRef.current.secondaryColor = undefined;
+        opponentPaddleRef.current.glowColor = '#fb7185';
+      }
     }
-  }, [playerTeam, opponentTeam, stage]);
+  }, [playerTeam, opponentTeam, stage, isTournamentMode]);
 
   // Entities refs
   const ballRef = useRef<Ball>({
@@ -3530,26 +3561,74 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.shadowColor = opp.hitFlash > 0.1 ? '#ffffff' : oppGlow;
         ctx.shadowBlur = isOppMega ? 22 : 12 + opp.hitFlash * 20;
 
-        if (isOppMega) {
-          const megaGrad = ctx.createLinearGradient(0, opp.y - opp.height / 2, 0, opp.y + opp.height / 2);
+        const oppX0 = opp.x - opp.width / 2;
+        const oppY0 = opp.y - opp.height / 2;
+        const oppR = opp.height / 2;
+
+        if (opp.hitFlash > 0.1) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.roundRect(oppX0, oppY0, opp.width, opp.height, oppR);
+          ctx.fill();
+        } else if (isOppMega) {
+          const megaGrad = ctx.createLinearGradient(0, oppY0, 0, oppY0 + opp.height);
           megaGrad.addColorStop(0, '#f0abfc');
           megaGrad.addColorStop(0.5, '#a855f7');
           megaGrad.addColorStop(1, '#581c87');
-          ctx.fillStyle = opp.hitFlash > 0.1 ? '#ffffff' : megaGrad;
-        } else if (opp.hitFlash > 0.1) {
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = megaGrad;
+          ctx.beginPath();
+          ctx.roundRect(oppX0, oppY0, opp.width, opp.height, oppR);
+          ctx.fill();
+        } else if (isTournamentMode && opp.flagColors && opp.flagColors.length > 0) {
+          // Dünya Turnuvası Modu: Rakip çubuğu ülke bayrağı renkleriyle (2 veya 3 renk)
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(oppX0, oppY0, opp.width, opp.height, oppR);
+          ctx.clip();
+
+          const colors = opp.flagColors;
+          const numStripes = colors.length;
+          const stripeW = opp.width / numStripes;
+
+          for (let i = 0; i < numStripes; i++) {
+            ctx.fillStyle = colors[i];
+            ctx.fillRect(oppX0 + i * stripeW, oppY0, stripeW + 0.6, opp.height);
+          }
+
+          // İnce dikey şerit ayrım çizgileri
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+          ctx.lineWidth = 1;
+          for (let i = 1; i < numStripes; i++) {
+            ctx.beginPath();
+            ctx.moveTo(oppX0 + i * stripeW, oppY0);
+            ctx.lineTo(oppX0 + i * stripeW, oppY0 + opp.height);
+            ctx.stroke();
+          }
+
+          // 3D parlaklık ve arcade gölgelendirme katmanı
+          const gloss = ctx.createLinearGradient(0, oppY0, 0, oppY0 + opp.height);
+          gloss.addColorStop(0, 'rgba(255, 255, 255, 0.38)');
+          gloss.addColorStop(0.35, 'rgba(255, 255, 255, 0.08)');
+          gloss.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+          gloss.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+          ctx.fillStyle = gloss;
+          ctx.fillRect(oppX0, oppY0, opp.width, opp.height);
+
+          ctx.restore();
         } else {
           ctx.fillStyle = opp.color;
+          ctx.beginPath();
+          ctx.roundRect(oppX0, oppY0, opp.width, opp.height, oppR);
+          ctx.fill();
         }
 
-        ctx.beginPath();
-        const oppR = opp.height / 2;
-        ctx.roundRect(opp.x - opp.width / 2, opp.y - opp.height / 2, opp.width, opp.height, oppR);
-        ctx.fill();
-
         // Crisp border outline
-        ctx.strokeStyle = isOppMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(oppX0, oppY0, opp.width, opp.height, oppR);
+        ctx.strokeStyle = isOppMega
+          ? '#f5d0fe'
+          : (isTournamentMode && opp.flagColors ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.4)');
+        ctx.lineWidth = 1.3;
         ctx.stroke();
 
         // Mega Paddle Crown Indicator for Opponent
@@ -3708,26 +3787,74 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.shadowColor = ply.hitFlash > 0.1 ? '#ffffff' : paddleGlow;
         ctx.shadowBlur = isMega ? 22 : 12 + ply.hitFlash * 20;
 
-        if (isMega) {
-          const megaGrad = ctx.createLinearGradient(0, ply.y - ply.height / 2, 0, ply.y + ply.height / 2);
+        const plyX0 = ply.x - ply.width / 2;
+        const plyY0 = ply.y - ply.height / 2;
+        const plyR = ply.height / 2;
+
+        if (ply.hitFlash > 0.1) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.roundRect(plyX0, plyY0, ply.width, ply.height, plyR);
+          ctx.fill();
+        } else if (isMega) {
+          const megaGrad = ctx.createLinearGradient(0, plyY0, 0, plyY0 + ply.height);
           megaGrad.addColorStop(0, '#f0abfc');
           megaGrad.addColorStop(0.5, '#a855f7');
           megaGrad.addColorStop(1, '#581c87');
-          ctx.fillStyle = ply.hitFlash > 0.1 ? '#ffffff' : megaGrad;
-        } else if (ply.hitFlash > 0.1) {
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = megaGrad;
+          ctx.beginPath();
+          ctx.roundRect(plyX0, plyY0, ply.width, ply.height, plyR);
+          ctx.fill();
+        } else if (isTournamentMode && ply.flagColors && ply.flagColors.length > 0) {
+          // Dünya Turnuvası Modu: Oyuncu çubuğu ülke bayrağı renkleriyle (2 veya 3 renk)
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(plyX0, plyY0, ply.width, ply.height, plyR);
+          ctx.clip();
+
+          const colors = ply.flagColors;
+          const numStripes = colors.length;
+          const stripeW = ply.width / numStripes;
+
+          for (let i = 0; i < numStripes; i++) {
+            ctx.fillStyle = colors[i];
+            ctx.fillRect(plyX0 + i * stripeW, plyY0, stripeW + 0.6, ply.height);
+          }
+
+          // İnce dikey şerit ayrım çizgileri
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+          ctx.lineWidth = 1;
+          for (let i = 1; i < numStripes; i++) {
+            ctx.beginPath();
+            ctx.moveTo(plyX0 + i * stripeW, plyY0);
+            ctx.lineTo(plyX0 + i * stripeW, plyY0 + ply.height);
+            ctx.stroke();
+          }
+
+          // 3D parlaklık ve arcade gölgelendirme katmanı
+          const gloss = ctx.createLinearGradient(0, plyY0, 0, plyY0 + ply.height);
+          gloss.addColorStop(0, 'rgba(255, 255, 255, 0.38)');
+          gloss.addColorStop(0.35, 'rgba(255, 255, 255, 0.08)');
+          gloss.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+          gloss.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+          ctx.fillStyle = gloss;
+          ctx.fillRect(plyX0, plyY0, ply.width, ply.height);
+
+          ctx.restore();
         } else {
           ctx.fillStyle = ply.color;
+          ctx.beginPath();
+          ctx.roundRect(plyX0, plyY0, ply.width, ply.height, plyR);
+          ctx.fill();
         }
 
-        ctx.beginPath();
-        const plyR = ply.height / 2;
-        ctx.roundRect(ply.x - ply.width / 2, ply.y - ply.height / 2, ply.width, ply.height, plyR);
-        ctx.fill();
-
         // Crisp border outline
-        ctx.strokeStyle = isMega ? '#f5d0fe' : 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(plyX0, plyY0, ply.width, ply.height, plyR);
+        ctx.strokeStyle = isMega
+          ? '#f5d0fe'
+          : (isTournamentMode && ply.flagColors ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.4)');
+        ctx.lineWidth = 1.3;
         ctx.stroke();
 
         // Mega Paddle Crown Indicator
