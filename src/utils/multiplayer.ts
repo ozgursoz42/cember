@@ -74,6 +74,7 @@ export interface NetworkPaddleState {
 }
 
 export interface NetworkGameStatePayload {
+  tick?: number;
   t: number;
   score: GameScore;
   rally?: number;
@@ -95,6 +96,7 @@ export interface NetworkGameStatePayload {
 }
 
 export interface NetworkInputPayload {
+  seq?: number;
   t: number;
   targetX: number;
   targetY: number;
@@ -127,6 +129,11 @@ export class MultiplayerManager {
   public status: ConnectionStatus = 'idle';
   public errorMessage: string = '';
   public ping: number = 0;
+
+  // Latency & Packet Loss Debug Simulator
+  public simulatedLatencyMs: number = 0;
+  public simulatedJitterMs: number = 0;
+  public simulatedPacketLoss: number = 0; // e.g. 0.05 for 5% loss
 
   public myProfile: PlayerProfile;
   public opponentProfile: PlayerProfile | null = null;
@@ -409,6 +416,29 @@ export class MultiplayerManager {
   }
 
   private handleIncomingMessage(msg: NetMessage) {
+    if (!msg || !msg.type) return;
+
+    // Simulated packet loss testing
+    if (this.simulatedPacketLoss > 0 && (msg.type === 'STATE' || msg.type === 'INPUT')) {
+      if (Math.random() < this.simulatedPacketLoss) {
+        return; // Drop packet
+      }
+    }
+
+    // Simulated latency & jitter testing
+    if (this.simulatedLatencyMs > 0 && (msg.type === 'STATE' || msg.type === 'INPUT')) {
+      const jitter = (Math.random() * 2 - 1) * this.simulatedJitterMs;
+      const delay = Math.max(0, this.simulatedLatencyMs + jitter);
+      setTimeout(() => {
+        this.processIncomingMessage(msg);
+      }, delay);
+      return;
+    }
+
+    this.processIncomingMessage(msg);
+  }
+
+  private processIncomingMessage(msg: NetMessage) {
     if (!msg || !msg.type) return;
 
     switch (msg.type) {

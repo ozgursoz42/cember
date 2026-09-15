@@ -130,6 +130,8 @@ export interface Ball {
   id?: string;
   x: number;
   y: number;
+  prevX?: number;
+  prevY?: number;
   vx: number;
   vy: number;
   radius: number;

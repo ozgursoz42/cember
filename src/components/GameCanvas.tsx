@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import {
   Ball,
   SensorCircle,
@@ -143,6 +143,31 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [score, stage]);
 
   const equippedBallSkinRef = useRef<ShopBallSkin>(BALL_SKINS[0]);
+
+  // Debug & Fixed Timestep Physics Refs
+  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
+  const physicsAccumulatorRef = useRef(0);
+  const serverTickRef = useRef(0);
+  const guestInputSeqRef = useRef(0);
+  const lastReceivedTickRef = useRef(0);
+  const lastDebugUpdateRef = useRef(0);
+  const lastHitDebugRef = useRef<{ entity: string; time: number; x: number; y: number } | null>(null);
+  const [debugInfo, setDebugInfo] = useState({
+    tick: 0,
+    seq: 0,
+    ping: 0,
+    ballSpeed: 0,
+    ballVx: 0,
+    ballVy: 0,
+    ballX: 0,
+    ballY: 0,
+    prevX: 0,
+    prevY: 0,
+    latency: 0,
+    jitter: 0,
+    loss: 0,
+    lastHit: 'None',
+  });
 
   // Sync team paddle colors and ball skin when country team or shop equipped skin changes
   useEffect(() => {
@@ -1338,6 +1363,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       return unsub;
     } else if (multiplayerRole === 'guest') {
       const unsub = multiplayerManager.onState((netState: NetworkGameStatePayload) => {
+        // Discard out-of-order or duplicate state snapshots
+        if (netState.tick !== undefined) {
+          if (netState.tick <= lastReceivedTickRef.current) {
+            return;
+          }
+          lastReceivedTickRef.current = netState.tick;
+        }
+
         const w = gameStateRef.current.width;
         const h = gameStateRef.current.height;
 
@@ -1552,7 +1585,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       // Guest: send input to host every frame
       if (isMultiplayer && multiplayerRole === 'guest' && multiplayerManager) {
+        guestInputSeqRef.current += 1;
         multiplayerManager.sendInput({
+          seq: guestInputSeqRef.current,
           t: currentTime,
           targetX: player.targetX / w,
           targetY: player.targetY / h,
@@ -2889,7 +2924,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           const queuedSoundEvents = [...pendingSoundEventsRef.current];
           pendingSoundEventsRef.current = [];
 
+          serverTickRef.current += 1;
           multiplayerManager.sendGameState({
+            tick: serverTickRef.current,
             t: currentTime,
             balls: ballsRef.current.map((b) => ({
               x: b.x / w,
@@ -4245,6 +4282,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.restore();
       }
 
+      // Periodic debug overlay info update
+      if (currentTime - lastDebugUpdateRef.current > 120) {
+        lastDebugUpdateRef.current = currentTime;
+        const mainB = ballsRef.current[0];
+        setDebugInfo({
+          tick: serverTickRef.current,
+          seq: guestInputSeqRef.current,
+          ping: multiplayerManager?.ping || 0,
+          ballSpeed: Math.round(mainB ? Math.hypot(mainB.vx, mainB.vy) : 0),
+          ballVx: Math.round(mainB?.vx || 0),
+          ballVy: Math.round(mainB?.vy || 0),
+          ballX: Math.round(mainB?.x || 0),
+          ballY: Math.round(mainB?.y || 0),
+          prevX: Math.round(mainB?.prevX || mainB?.x || 0),
+          prevY: Math.round(mainB?.prevY || mainB?.y || 0),
+          latency: multiplayerManager?.simulatedLatencyMs || 0,
+          jitter: multiplayerManager?.simulatedJitterMs || 0,
+          loss: Math.round((multiplayerManager?.simulatedPacketLoss || 0) * 100),
+          lastHit: mainB ? `hitter:${mainB.lastHitter}` : 'None',
+        });
+      }
+
       ctx.restore();
 
       animId = requestAnimationFrame(loop);
@@ -4252,7 +4311,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [difficulty, isPaused, onActivePowerUpsChange, onComboChange, onGameOver, onRallyChange, onScoreUpdate, resetBall, updateSensorDifficulty]);
+  }, [difficulty, isPaused, multiplayerManager, onActivePowerUpsChange, onComboChange, onGameOver, onRallyChange, onScoreUpdate, resetBall, updateSensorDifficulty]);
 
   return (
     <div
@@ -4265,6 +4324,136 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         id="cember-game-canvas"
         className="block w-full h-full max-w-md mx-auto cursor-pointer"
       />
+
+      {/* Debug Mode Toggle Button */}
+      <button
+        id="debug-mode-toggle-btn"
+        onClick={() => setShowDebugOverlay((prev) => !prev)}
+        className="absolute top-2 right-2 z-50 px-2 py-1 text-[11px] font-mono font-bold rounded bg-slate-900/80 border border-cyan-500/50 text-cyan-400 hover:bg-slate-800 transition-colors shadow-lg"
+      >
+        🐞 {showDebugOverlay ? 'HIDE DEBUG' : 'DEBUG'}
+      </button>
+
+      {/* Debug Mode Overlay Panel */}
+      {showDebugOverlay && (
+        <div
+          id="debug-overlay-panel"
+          className="absolute top-10 right-2 z-50 w-72 max-h-[85vh] overflow-y-auto p-3 text-xs font-mono bg-slate-950/90 backdrop-blur-md border border-cyan-500/40 rounded-xl text-slate-200 shadow-2xl space-y-2.5 pointer-events-auto select-none"
+        >
+          <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1.5">
+            <span className="font-bold text-cyan-300">PHYSICS & NETWORK DEBUG</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+              Swept CCD Active
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-slate-900/70 p-2 rounded-lg border border-slate-800">
+            <div><span className="text-slate-400">Server Tick:</span> #{debugInfo.tick}</div>
+            <div><span className="text-slate-400">Input Seq:</span> #{debugInfo.seq}</div>
+            <div><span className="text-slate-400">Ping:</span> {debugInfo.ping}ms</div>
+            <div><span className="text-slate-400">Hitter:</span> {debugInfo.lastHit}</div>
+          </div>
+
+          <div className="bg-slate-900/70 p-2 rounded-lg border border-slate-800 space-y-1 text-[11px]">
+            <div className="font-semibold text-amber-400">Ball Physics State</div>
+            <div>Speed: <span className="text-cyan-300">{debugInfo.ballSpeed} px/s</span></div>
+            <div>Velocity: ({debugInfo.ballVx}, {debugInfo.ballVy})</div>
+            <div>Position: ({debugInfo.ballX}, {debugInfo.ballY})</div>
+            <div>Prev Pos: ({debugInfo.prevX}, {debugInfo.prevY})</div>
+          </div>
+
+          {/* High Speed Physics Safety Tests */}
+          <div className="bg-slate-900/70 p-2 rounded-lg border border-slate-800 space-y-1.5 text-[11px]">
+            <div className="font-semibold text-rose-400">High-Speed CCD Safety Tests</div>
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                id="btn-speed-2x"
+                onClick={() => {
+                  ballsRef.current.forEach(b => {
+                    b.vx *= 2;
+                    b.vy *= 2;
+                    b.speed *= 2;
+                  });
+                }}
+                className="px-1.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 border border-rose-500/40 text-rose-300 rounded text-center font-bold"
+              >
+                2x Speed
+              </button>
+              <button
+                id="btn-speed-5x"
+                onClick={() => {
+                  ballsRef.current.forEach(b => {
+                    b.vx *= 5;
+                    b.vy *= 5;
+                    b.speed *= 5;
+                  });
+                }}
+                className="px-1.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 rounded text-center font-bold"
+              >
+                5x Speed
+              </button>
+              <button
+                id="btn-speed-10x"
+                onClick={() => {
+                  ballsRef.current.forEach(b => {
+                    b.vx *= 10;
+                    b.vy *= 10;
+                    b.speed *= 10;
+                  });
+                }}
+                className="px-1.5 py-1 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/40 text-purple-300 rounded text-center font-bold"
+              >
+                10x Speed
+              </button>
+            </div>
+          </div>
+
+          {/* Network Latency Simulator Controls */}
+          <div className="bg-slate-900/70 p-2 rounded-lg border border-slate-800 space-y-1.5 text-[11px]">
+            <div className="font-semibold text-cyan-400">Network Latency Simulator</div>
+            <div className="grid grid-cols-4 gap-1">
+              {[0, 50, 100, 200].map((ms) => (
+                <button
+                  key={ms}
+                  id={`btn-latency-${ms}`}
+                  onClick={() => {
+                    if (multiplayerManager) {
+                      multiplayerManager.simulatedLatencyMs = ms;
+                      multiplayerManager.simulatedJitterMs = ms > 0 ? 25 : 0;
+                    }
+                  }}
+                  className={`px-1 py-1 rounded border text-center font-bold transition-colors ${
+                    debugInfo.latency === ms
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                  }`}
+                >
+                  {ms}ms
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span>Packet Loss ({debugInfo.loss}%):</span>
+              <button
+                id="btn-toggle-loss"
+                onClick={() => {
+                  if (multiplayerManager) {
+                    multiplayerManager.simulatedPacketLoss = multiplayerManager.simulatedPacketLoss > 0 ? 0 : 0.1;
+                  }
+                }}
+                className={`px-2 py-0.5 rounded border font-bold transition-colors ${
+                  debugInfo.loss > 0
+                    ? 'bg-red-500/30 text-red-300 border-red-500'
+                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                }`}
+              >
+                {debugInfo.loss > 0 ? '10% LOSS ON' : 'NO LOSS'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
