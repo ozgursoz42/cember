@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { RotateCcw, Home, Trophy, Flame, Sparkles, Clock, Target, Zap, ChevronRight, Map, Award, Star, Crown } from 'lucide-react';
+import { RotateCcw, Home, Trophy, Flame, Sparkles, Clock, Target, Zap, ChevronRight, Map, Award, Star, Crown, ShoppingBag } from 'lucide-react';
 import { GameScore, GameStats, CountryTeam, TournamentMatch, GameDifficulty } from '../types';
 import { DifficultyBadge } from '../adventureData';
+import { ShopModal } from './ShopModal';
 
 export const DIFFICULTY_NAMES: Record<
   GameDifficulty,
@@ -98,6 +99,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const diffInfo = DIFFICULTY_NAMES[difficulty] || DIFFICULTY_NAMES.easiest;
 
   const [showDifficultyPrompt, setShowDifficultyPrompt] = useState<boolean>(isFinalAdventureStage);
+  const [showShopModal, setShowShopModal] = useState<boolean>(false);
 
   // Calculate stars in adventure mode
   const diff = score.player - score.opponent;
@@ -371,6 +373,15 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           )}
 
           <button
+            id="gameover-open-shop-btn"
+            onClick={() => setShowShopModal(true)}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 text-amber-300 font-bold text-xs tracking-wider flex items-center justify-center gap-2 transition active:scale-[0.98] border border-amber-500/40"
+          >
+            <ShoppingBag className="w-4 h-4 text-amber-400" />
+            <span>MAĞAZA 🛒 (GÜÇ / ÇUBUK AL)</span>
+          </button>
+
+          <button
             id="return-menu-btn"
             onClick={onMainMenu}
             className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 font-bold text-xs tracking-wider flex items-center justify-center gap-2 transition active:scale-[0.98]"
@@ -380,6 +391,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Shop Modal */}
+      {showShopModal && <ShopModal onClose={() => setShowShopModal(false)} />}
 
       {/* 30. BÖLÜM ZAFER VE YENİ ZORLUK MODU POPUP PENCERESİ */}
       {showDifficultyPrompt && (

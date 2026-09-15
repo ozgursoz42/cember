@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Play, Lock, CheckCircle2, Star, Trophy, Award, Sparkles, ChevronRight, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Play, Lock, CheckCircle2, Star, Trophy, Award, Sparkles, ChevronRight, RotateCcw, ShoppingBag } from 'lucide-react';
 import { GameDifficulty } from '../types';
 import {
   ADVENTURE_STAGES,
@@ -10,6 +10,7 @@ import {
   getUnlockedBadges,
 } from '../adventureData';
 import { soundEngine } from '../utils/audio';
+import { ShopModal } from './ShopModal';
 
 interface AdventureRoadmapProps {
   difficulty: GameDifficulty;
@@ -30,6 +31,7 @@ export const AdventureRoadmap: React.FC<AdventureRoadmapProps> = ({
   const [selectedStageId, setSelectedStageId] = useState<number>(activeStageId);
   const [unlockedBadges, setUnlockedBadges] = useState<Record<string, boolean>>({});
   const [showBadgeModal, setShowBadgeModal] = useState<boolean>(false);
+  const [showShopModal, setShowShopModal] = useState<boolean>(false);
 
   useEffect(() => {
     const list = getAdventureProgress(difficulty);
@@ -99,19 +101,35 @@ export const AdventureRoadmap: React.FC<AdventureRoadmapProps> = ({
           </h2>
         </div>
 
-        {/* Badge showcase toggle */}
-        <button
-          id="badges-modal-btn"
-          onClick={() => setShowBadgeModal(true)}
-          className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold active:scale-95 ${
-            isCurrentBadgeUnlocked
-              ? 'bg-amber-500/20 border-amber-500/60 text-amber-300'
-              : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-white'
-          }`}
-        >
-          <Trophy className="w-4 h-4 text-amber-400" />
-          <span className="text-[11px] font-mono">Rozetler</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* Shop Modal button */}
+          <button
+            id="adventure-shop-btn"
+            onClick={() => {
+              soundEngine.playClick();
+              setShowShopModal(true);
+            }}
+            className="p-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-400/30 border border-amber-500/60 text-amber-300 hover:text-white transition flex items-center gap-1 text-xs font-bold active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+            title="Arena Mağazası"
+          >
+            <ShoppingBag className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] font-black hidden sm:inline">MAĞAZA</span>
+          </button>
+
+          {/* Badge showcase toggle */}
+          <button
+            id="badges-modal-btn"
+            onClick={() => setShowBadgeModal(true)}
+            className={`p-2 rounded-xl border transition flex items-center gap-1 text-xs font-bold active:scale-95 ${
+              isCurrentBadgeUnlocked
+                ? 'bg-amber-500/20 border-amber-500/60 text-amber-300'
+                : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] font-mono">Rozetler</span>
+          </button>
+        </div>
       </div>
 
       {/* Difficulty Tabs Bar */}
@@ -399,6 +417,9 @@ export const AdventureRoadmap: React.FC<AdventureRoadmapProps> = ({
           </div>
         </div>
       )}
+
+      {/* Shop Modal */}
+      {showShopModal && <ShopModal onClose={() => setShowShopModal(false)} />}
     </div>
   );
 };

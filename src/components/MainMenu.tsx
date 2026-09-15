@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Volume2, VolumeX, Shield, Zap, Flame, Trophy, Info, X, Map, Award, Feather, Sparkles, Globe, Users, Maximize2, Minimize2, Smartphone } from 'lucide-react';
+import { Play, Volume2, VolumeX, Shield, Zap, Flame, Trophy, Info, X, Map, Award, Feather, Sparkles, Globe, Users, Maximize2, Minimize2, Smartphone, ShoppingBag, Star } from 'lucide-react';
 import { GameDifficulty } from '../types';
 import { DIFFICULTY_BADGES, getAdventureProgress, getUnlockedBadges, ADVENTURE_STAGES } from '../adventureData';
 import { isFullscreen, toggleFullscreen } from '../utils/fullscreen';
 import { gyroController, GyroState } from '../utils/gyroscope';
 import { soundEngine } from '../utils/audio';
+import { ShopModal } from './ShopModal';
 
 interface MainMenuProps {
   onStartGame: (difficulty: GameDifficulty) => void;
@@ -31,6 +32,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 }) => {
   const [showPowerUpGuide, setShowPowerUpGuide] = useState(false);
   const [showBadgesModal, setShowBadgesModal] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
   const [inFullscreen, setInFullscreen] = useState(false);
   const [gyroState, setGyroState] = useState<GyroState>(gyroController.getState());
   const [gyroMessage, setGyroMessage] = useState<string>('');
@@ -119,6 +121,20 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           >
             <Award className="w-4 h-4" />
             <span className="text-[11px] hidden sm:inline">Rozetler</span>
+          </button>
+
+          <button
+            id="shop-modal-btn"
+            onClick={() => {
+              soundEngine.playClick();
+              setShowShopModal(true);
+            }}
+            aria-label="Mağaza"
+            className="p-2 rounded-full bg-gradient-to-r from-amber-500/20 to-amber-400/30 border border-amber-400/60 text-amber-300 hover:text-white transition active:scale-95 flex items-center gap-1 text-xs font-bold shadow-[0_0_10px_rgba(245,158,11,0.25)]"
+            title="Arena Mağazası"
+          >
+            <ShoppingBag className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] font-black hidden sm:inline">MAĞAZA</span>
           </button>
 
           <button
@@ -336,6 +352,32 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <span className="text-[11px] bg-black/20 px-2 py-0.5 rounded-lg font-bold">
             {completedCount}/{ADVENTURE_STAGES.length}
           </span>
+        </button>
+
+        {/* MAĞAZA (SHOP) BUTTON */}
+        <button
+          id="menu-open-shop-btn"
+          onClick={() => {
+            soundEngine.playClick();
+            setShowShopModal(true);
+          }}
+          className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 font-black text-xs tracking-wider flex items-center justify-between shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-[0.98] transition hover:brightness-110"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-xl bg-slate-950/25 flex items-center justify-center">
+              <ShoppingBag className="w-4 h-4 text-slate-950" />
+            </div>
+            <div className="text-left">
+              <div className="text-xs font-black leading-tight flex items-center gap-1.5">
+                <span>ARENA MAĞAZASI 🛒</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-950 text-amber-300 font-black">YILDIZ HARCA</span>
+              </div>
+              <div className="text-[10px] font-extrabold text-slate-900/90">
+                Çubuk Kaplamaları • Avantajlar & Engeller
+              </div>
+            </div>
+          </div>
+          <Star className="w-4 h-4 text-slate-950 fill-current" />
         </button>
 
         {/* SECONDARY: HIZLI MAÇ BUTTON */}
@@ -574,6 +616,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
         </div>
       )}
+
+      {/* Shop Modal */}
+      {showShopModal && <ShopModal onClose={() => setShowShopModal(false)} />}
     </div>
   );
 };

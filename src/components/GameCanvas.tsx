@@ -30,6 +30,14 @@ import { soundEngine } from '../utils/audio';
 import { StageTheme } from '../adventureData';
 import { gyroController } from '../utils/gyroscope';
 import { MultiplayerManager, NetworkGameStatePayload, NetworkInputPayload } from '../utils/multiplayer';
+import {
+  getShopState,
+  PLAYER_PADDLE_SKINS,
+  OPPONENT_PADDLE_SKINS,
+  BALL_SKINS,
+  ShopBallSkin,
+  consumeActiveBoostersForMatch,
+} from '../shopData';
 
 interface GameCanvasProps {
   difficulty: GameDifficulty;
@@ -134,9 +142,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     gameStateRef.current.baseTargetScore = stage?.targetScore || score.targetScore || 5;
   }, [score, stage]);
 
-  // Sync team paddle colors when country team changes
+  const equippedBallSkinRef = useRef<ShopBallSkin>(BALL_SKINS[0]);
+
+  // Sync team paddle colors and ball skin when country team or shop equipped skin changes
   useEffect(() => {
-    if (playerTeam) {
+    const shop = getShopState();
+
+    // Ball skin
+    const ballSkin = BALL_SKINS.find((b) => b.id === shop.equippedBallSkinId) || BALL_SKINS[0];
+    equippedBallSkinRef.current = ballSkin;
+
+    // Player paddle skin
+    const playerSkin = PLAYER_PADDLE_SKINS.find((s) => s.id === shop.equippedPlayerSkinId);
+    if (playerSkin) {
+      playerPaddleRef.current.color = playerSkin.color;
+      playerPaddleRef.current.secondaryColor = playerSkin.secondaryColor;
+      playerPaddleRef.current.glowColor = playerSkin.glowColor;
+    } else if (playerTeam) {
       playerPaddleRef.current.color = playerTeam.paddleColor;
       playerPaddleRef.current.secondaryColor = playerTeam.secondaryColor || playerTeam.accentColor;
       playerPaddleRef.current.glowColor = playerTeam.glowColor;
@@ -146,14 +168,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       playerPaddleRef.current.glowColor = '#22d3ee';
     }
 
-    if (opponentTeam) {
+    // Opponent paddle skin
+    const oppSkin = OPPONENT_PADDLE_SKINS.find((s) => s.id === shop.equippedOpponentSkinId);
+    if (oppSkin) {
+      opponentPaddleRef.current.color = oppSkin.color;
+      opponentPaddleRef.current.secondaryColor = oppSkin.secondaryColor || oppSkin.color;
+      opponentPaddleRef.current.glowColor = oppSkin.glowColor;
+    } else if (opponentTeam) {
       opponentPaddleRef.current.color = opponentTeam.paddleColor;
       opponentPaddleRef.current.secondaryColor = opponentTeam.secondaryColor || opponentTeam.accentColor;
       opponentPaddleRef.current.glowColor = opponentTeam.glowColor;
     } else if (stage) {
-      opponentPaddleRef.current.color = stage.opponentPaddleColor;
-      opponentPaddleRef.current.secondaryColor = undefined;
-      opponentPaddleRef.current.glowColor = stage.opponentGlowColor;
+      opponentPaddleRef.current.color = stage.opponentPaddleColor || '#f43f5e';
+      opponentPaddleRef.current.secondaryColor = stage.opponentPaddleColor ? undefined : '#e11d48';
+      opponentPaddleRef.current.glowColor = stage.opponentGlowColor || '#fb7185';
     } else {
       opponentPaddleRef.current.color = '#f43f5e';
       opponentPaddleRef.current.secondaryColor = '#e11d48';
@@ -281,6 +309,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const powerUpToastRef = useRef<{ title: string; subtitle: string; color: string; icon: string; timer: number } | null>(null);
   const lastReportedStatusKeyRef = useRef<string>('');
   const hasTriggeredGameOverRef = useRef<boolean>(false);
+  const goalSparklesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; size: number; alpha: number; color: string; life: number }>>([]);
+  const disableOpponentPowersRef = useRef<boolean>(false);
+  const boostersAppliedRef = useRef<boolean>(false);
 
   // Spawn visual particles
   const spawnHitParticles = (
@@ -712,6 +743,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     } else {
       // COLLECTED BY OPPONENT!
+      if (disableOpponentPowersRef.current && p.type !== 'shrink_paddle') {
+        soundEngine.playFreezeSound();
+        triggerToast('🚫 RAKİP GÜCÜ ENGELLENDİ!', 'Rakip Engeli kalkanı gücü yuttu!', '#10b981', '🚫');
+        return;
+      }
       switch (p.type) {
         case 'extend_paddle': {
           if (opponent.extensionLevel < 3) {
@@ -954,6 +990,77 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       updateSensorDifficulty();
       resetBall(true);
+
+      // Apply single-match shop boosters ONCE canvas dimensions (w, h) are non-zero and ready
+      if (!boostersAppliedRef.current && w > 0 && h > 0) {
+        boostersAppliedRef.current = true;
+        const activeBoosters = consumeActiveBoostersForMatch();
+        if (activeBoosters.length > 0) {
+          const player = playerPaddleRef.current;
+          const opponent = opponentPaddleRef.current;
+          const ball = ballRef.current;
+
+          activeBoosters.forEach((boosterId) => {
+            if (boosterId === 'booster_mega_paddle') {
+              player.isMegaPaddle = true;
+              player.megaPaddleTimer = 16;
+              player.width = Math.round(w * 0.55);
+              soundEngine.playMegaPaddle();
+              triggerToast('👑 UZUN ÇUBUK BAŞLANGICI!', '16 saniye dev Mega Çubuk!', '#a855f7', '👑');
+            } else if (boosterId === 'booster_goalie') {
+              playerGoaliePaddleRef.current = {
+                id: Math.random().toString(),
+                x: w / 2,
+                y: h - 28,
+                targetX: w / 2,
+                vx: 0,
+                width: 82,
+                height: 12,
+                speed: 16,
+                remainingTime: 20,
+                totalTime: 20,
+                alpha: 1,
+                dissolving: false,
+                color: '#06b6d4',
+                glowColor: '#22d3ee',
+              };
+              soundEngine.playRocketBoost();
+              triggerToast('🧤 KALECİ DESTEĞİ BAŞLANGICI!', '20s Otonom kaleci sahaya indi!', '#06b6d4', '🧤');
+            } else if (boosterId === 'booster_ice_wall') {
+              playerIceWallRef.current = {
+                active: true,
+                remainingTime: 15,
+                totalTime: 15,
+                y: h - 14,
+                height: 14,
+                alpha: 1,
+                hitFlash: 0,
+              };
+              soundEngine.playIceWall();
+              triggerToast('🧊 BUZ KALKANI BAŞLANGICI!', 'Kaleni 15s koruyan buz duvarı!', '#38bdf8', '🧊');
+            } else if (boosterId === 'booster_score_plus1') {
+              onScoreUpdate({ ...score, player: score.player + 1 }, 'player');
+              soundEngine.playScore(true);
+              triggerToast('⚽ +1 AVANS BAŞLANGICI!', 'Maç 1-0 önde başladı!', '#f59e0b', '⚽');
+            } else if (boosterId === 'booster_fireball') {
+              player.isFiery = true;
+              player.fireTimer = 18;
+              ball.isFireball = true;
+              soundEngine.playFireballSound();
+              triggerToast('🔥 ALEVLİ TOP BAŞLANGICI!', 'Top ve vuruşlar alevli (18s)!', '#f97316', '🔥');
+            } else if (boosterId === 'booster_disable_opp_power') {
+              disableOpponentPowersRef.current = true;
+              soundEngine.playFreezeSound();
+              triggerToast('🚫 RAKİP GÜÇLERİ ENGELLENDİ!', 'Rakip bu maç güç/roket kullanamaz!', '#ef4444', '🚫');
+            } else if (boosterId === 'booster_shrink_opp') {
+              opponent.shrinkLevel = 1;
+              opponent.width = 42;
+              soundEngine.playSlowMoSound();
+              triggerToast('🤏 RAKİP ÇUBUĞU KÜÇÜLTÜLDÜ!', 'Rakip maça küçük çubukla başladı!', '#e11d48', '🤏');
+            }
+          });
+        }
+      }
     };
 
     updateDimensions();
@@ -2405,15 +2512,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
           // Update ball trail buffer for all active balls
           for (const b of ballsRef.current) {
+            const currentBallSkin = equippedBallSkinRef.current;
             const trailColor = b.isFireball
               ? '249, 115, 22'
               : b.isSlowMo
               ? '168, 85, 247'
               : b.lastHitter === 'player'
-              ? '34, 211, 238'
+              ? (currentBallSkin?.trailColor || '34, 211, 238')
               : b.lastHitter === 'opponent'
               ? '251, 113, 133'
-              : '245, 158, 11';
+              : (currentBallSkin?.trailColor || '245, 158, 11');
 
             b.trail.unshift({ x: b.x, y: b.y, alpha: 0.85, radius: b.radius, color: trailColor });
             if (b.trail.length > 10) b.trail.pop();
@@ -3604,7 +3712,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
           // Ball Glow & Core
           ctx.save();
-          let ballGlowColor = ball.lastHitter === 'player' ? '#22d3ee' : ball.lastHitter === 'opponent' ? '#fb7185' : '#fbbf24';
+          const currentSkin = equippedBallSkinRef.current;
+          let ballGlowColor = ball.lastHitter === 'player'
+            ? (currentSkin?.glowColor || '#22d3ee')
+            : ball.lastHitter === 'opponent'
+            ? '#fb7185'
+            : (currentSkin?.glowColor || '#fbbf24');
+
           if (ball.isFireball) {
             ballGlowColor = '#f97316';
           } else if (ball.isSlowMo) {
@@ -3658,6 +3772,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             ctx.stroke();
           }
 
+          const baseBallColor = (!ball.isFireball && !ball.isSlowMo && currentSkin?.color) ? currentSkin.color : '#ffffff';
           const ballGrad = ctx.createRadialGradient(
             ball.x - ball.radius * 0.3,
             ball.y - ball.radius * 0.3,
@@ -3667,38 +3782,229 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             ball.radius
           );
           ballGrad.addColorStop(0, '#ffffff');
-          ballGrad.addColorStop(0.6, ballGlowColor);
+          ballGrad.addColorStop(0.5, baseBallColor);
+          ballGrad.addColorStop(0.85, ballGlowColor);
           ballGrad.addColorStop(1, '#0f172a');
 
           ctx.fillStyle = ballGrad;
           ctx.beginPath();
           ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
           ctx.fill();
+
+          // Custom Ball Inner Patterns
+          if (currentSkin && !ball.isFireball && !ball.isSlowMo) {
+            if (currentSkin.innerPattern === 'soccer') {
+              ctx.save();
+              ctx.fillStyle = '#0f172a';
+              // Center pentagon
+              ctx.beginPath();
+              for (let p = 0; p < 5; p++) {
+                const angle = (p * Math.PI * 2) / 5 - Math.PI / 2;
+                const px = ball.x + Math.cos(angle) * (ball.radius * 0.32);
+                const py = ball.y + Math.sin(angle) * (ball.radius * 0.32);
+                if (p === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              ctx.fill();
+
+              // Outer dots
+              for (let p = 0; p < 5; p++) {
+                const angle = (p * Math.PI * 2) / 5 - Math.PI / 2;
+                const px = ball.x + Math.cos(angle) * (ball.radius * 0.72);
+                const py = ball.y + Math.sin(angle) * (ball.radius * 0.72);
+                ctx.beginPath();
+                ctx.arc(px, py, ball.radius * 0.16, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.restore();
+            } else if (currentSkin.innerPattern === 'gold_star') {
+              ctx.save();
+              ctx.fillStyle = '#fef08a';
+              ctx.shadowColor = '#fbbf24';
+              ctx.shadowBlur = 8;
+              ctx.beginPath();
+              const spikes = 5;
+              const outerR = ball.radius * 0.52;
+              const innerR = ball.radius * 0.22;
+              for (let i = 0; i < spikes * 2; i++) {
+                const r = i % 2 === 0 ? outerR : innerR;
+                const angle = (i * Math.PI) / spikes - Math.PI / 2;
+                const sx = ball.x + Math.cos(angle) * r;
+                const sy = ball.y + Math.sin(angle) * r;
+                if (i === 0) ctx.moveTo(sx, sy);
+                else ctx.lineTo(sx, sy);
+              }
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            } else if (currentSkin.innerPattern === 'matrix') {
+              ctx.save();
+              ctx.strokeStyle = 'rgba(16, 185, 129, 0.75)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(ball.x - ball.radius * 0.6, ball.y);
+              ctx.lineTo(ball.x + ball.radius * 0.6, ball.y);
+              ctx.moveTo(ball.x, ball.y - ball.radius * 0.6);
+              ctx.lineTo(ball.x, ball.y + ball.radius * 0.6);
+              ctx.stroke();
+              ctx.restore();
+            } else if (currentSkin.innerPattern === 'ruby') {
+              ctx.save();
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.arc(ball.x, ball.y, ball.radius * 0.45, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+
           ctx.restore();
         });
       }
 
       // ==========================================
-      // ROUND BANNER NOTIFICATION OVERLAY
+      // HIGH-RESOLUTION SPARKLE GLOWING GOAL BANNER
       // ==========================================
       if (state.isRoundResetting && state.roundBanner) {
         ctx.save();
-        const isDouble = state.roundBanner.includes('+2');
-        ctx.fillStyle = isDouble ? 'rgba(30, 27, 75, 0.85)' : 'rgba(15, 23, 42, 0.8)';
-        ctx.fillRect(0, h / 2 - 32, w, 64);
+        const bannerText = state.roundBanner;
+        const isDouble = bannerText.includes('+2') || bannerText.includes('ÇEMBER');
+        const isPlayerGoal = bannerText.includes('YOU') || (bannerText.includes('GOL') && !bannerText.includes('RAKİP') && !bannerText.includes('KALENE'));
 
-        if (isDouble) {
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(16, h / 2 - 28, w - 32, 56);
+        // Spawn gold & neon sparkles burst if empty
+        if (goalSparklesRef.current.length < 15) {
+          for (let i = 0; i < 45; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 15 + Math.random() * 160;
+            goalSparklesRef.current.push({
+              x: w / 2 + Math.cos(angle) * dist,
+              y: h / 2 + Math.sin(angle) * dist,
+              vx: (Math.random() - 0.5) * 160,
+              vy: (Math.random() - 0.5) * 160,
+              size: 2 + Math.random() * 6,
+              alpha: 0.9 + Math.random() * 0.1,
+              color: isDouble ? '#f59e0b' : isPlayerGoal ? '#38bdf8' : '#f43f5e',
+              life: 1.0,
+            });
+          }
         }
 
-        ctx.fillStyle = isDouble ? '#f59e0b' : state.roundBanner.includes('YOU') ? '#38bdf8' : '#fb7185';
-        ctx.font = '900 18px Outfit, sans-serif';
+        // Update and draw sparkles
+        goalSparklesRef.current.forEach((sp) => {
+          sp.x += sp.vx * dt;
+          sp.y += sp.vy * dt;
+          sp.life -= dt * 0.9;
+          if (sp.life > 0) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, sp.life);
+            ctx.shadowColor = sp.color;
+            ctx.shadowBlur = 14;
+            ctx.fillStyle = sp.color;
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        });
+        goalSparklesRef.current = goalSparklesRef.current.filter((s) => s.life > 0);
+
+        const pulse = 1 + Math.sin(currentTime * 0.012) * 0.07;
+        const bannerH = 76;
+        const centerY = h / 2;
+
+        // Radial backdrop aura
+        const auraGrad = ctx.createRadialGradient(w / 2, centerY, 10, w / 2, centerY, w * 0.55);
+        auraGrad.addColorStop(0, isDouble ? 'rgba(245, 158, 11, 0.45)' : isPlayerGoal ? 'rgba(6, 182, 212, 0.45)' : 'rgba(244, 63, 94, 0.45)');
+        auraGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+        ctx.fillStyle = auraGrad;
+        ctx.fillRect(0, centerY - bannerH * 1.5, w, bannerH * 3);
+
+        // Glassmorphism Center Ribbon
+        const ribbonGrad = ctx.createLinearGradient(0, centerY - bannerH / 2, 0, centerY + bannerH / 2);
+        if (isDouble) {
+          ribbonGrad.addColorStop(0, 'rgba(45, 16, 95, 0.94)');
+          ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
+          ribbonGrad.addColorStop(1, 'rgba(112, 44, 5, 0.94)');
+        } else if (isPlayerGoal) {
+          ribbonGrad.addColorStop(0, 'rgba(8, 47, 73, 0.94)');
+          ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
+          ribbonGrad.addColorStop(1, 'rgba(12, 74, 110, 0.94)');
+        } else {
+          ribbonGrad.addColorStop(0, 'rgba(76, 5, 25, 0.94)');
+          ribbonGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.98)');
+          ribbonGrad.addColorStop(1, 'rgba(88, 28, 135, 0.94)');
+        }
+
+        ctx.fillStyle = ribbonGrad;
+        ctx.fillRect(0, centerY - bannerH / 2, w, bannerH);
+
+        // Neon Glow Trim Lines
+        const trimColor = isDouble ? '#f59e0b' : isPlayerGoal ? '#38bdf8' : '#fb7185';
+        ctx.strokeStyle = trimColor;
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = trimColor;
+        ctx.shadowBlur = 22;
+
+        ctx.beginPath();
+        ctx.moveTo(0, centerY - bannerH / 2);
+        ctx.lineTo(w, centerY - bannerH / 2);
+        ctx.moveTo(0, centerY + bannerH / 2);
+        ctx.lineTo(w, centerY + bannerH / 2);
+        ctx.stroke();
+
+        // Shimmer Light Sweep
+        const sweepX = ((currentTime * 0.45) % (w * 2)) - w / 2;
+        const sweepGrad = ctx.createLinearGradient(sweepX - 70, centerY, sweepX + 70, centerY);
+        sweepGrad.addColorStop(0, 'rgba(255,255,255,0)');
+        sweepGrad.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+        sweepGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sweepGrad;
+        ctx.fillRect(0, centerY - bannerH / 2, w, bannerH);
+
+        // Render Multi-Layered 3D Glowing Text
+        ctx.save();
+        ctx.translate(w / 2, centerY);
+        ctx.scale(pulse, pulse);
+
+        // 3D Shadow Drop
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.font = '900 23px Outfit, system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(state.roundBanner, w / 2, h / 2);
+        ctx.fillText(bannerText, 3, 3);
+
+        // Glowing Outer Stroke
+        ctx.strokeStyle = isDouble ? '#78350f' : isPlayerGoal ? '#0c4a6e' : '#881337';
+        ctx.lineWidth = 7;
+        ctx.strokeText(bannerText, 0, 0);
+
+        // High-res Metallic / Cyber Gradient Text Fill
+        const textGrad = ctx.createLinearGradient(0, -14, 0, 14);
+        if (isDouble) {
+          textGrad.addColorStop(0, '#ffffff');
+          textGrad.addColorStop(0.35, '#fde047');
+          textGrad.addColorStop(1, '#f59e0b');
+        } else if (isPlayerGoal) {
+          textGrad.addColorStop(0, '#ffffff');
+          textGrad.addColorStop(0.35, '#7dd3fc');
+          textGrad.addColorStop(1, '#0284c7');
+        } else {
+          textGrad.addColorStop(0, '#ffffff');
+          textGrad.addColorStop(0.35, '#fca5a5');
+          textGrad.addColorStop(1, '#e11d48');
+        }
+
+        ctx.shadowColor = trimColor;
+        ctx.shadowBlur = 28;
+        ctx.fillStyle = textGrad;
+        ctx.fillText(bannerText, 0, 0);
+
         ctx.restore();
+        ctx.restore();
+      } else {
+        goalSparklesRef.current = [];
       }
 
       // ==========================================
