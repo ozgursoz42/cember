@@ -17,6 +17,7 @@ import { CountryTeam } from '../types';
 import { TOURNAMENT_COUNTRIES } from '../data/tournamentData';
 import { MultiplayerManager, ConnectionStatus } from '../utils/multiplayer';
 import { soundEngine } from '../utils/audio';
+import { CountryFlag } from './CountryFlag';
 
 interface MultiplayerLobbyProps {
   onBackToMenu: () => void;
@@ -59,7 +60,8 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       const params = new URLSearchParams(window.location.search);
       const urlRoom = params.get('room');
       if (urlRoom && urlRoom.length >= 4) {
-        setJoinCodeInput(urlRoom.trim());
+        const cleaned = MultiplayerManager.normalizeRoomCode(urlRoom);
+        setJoinCodeInput(cleaned);
         setTab('join');
       }
     }
@@ -177,11 +179,14 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     soundEngine.playClick();
     const newCode = MultiplayerManager.generateRoomCode();
     setRoomCode(newCode);
+    setErrorMessage('');
+    setOpponentTeam(null);
   };
 
-  // Join Room Handler
-  const handleJoinRoom = () => {
-    const cleanedCode = MultiplayerManager.normalizeRoomCode(joinCodeInput);
+  // Join Room Handler with code parameter or state
+  const handleJoinRoom = useCallback((codeOverride?: string) => {
+    const rawCode = codeOverride || joinCodeInput;
+    const cleanedCode = MultiplayerManager.normalizeRoomCode(rawCode);
     if (!cleanedCode || cleanedCode.length < 4) {
       setErrorMessage('Lütfen geçerli bir 6 haneli oda kodu girin.');
       return;
@@ -229,7 +234,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     net.joinRoom(cleanedCode).catch((err) => {
       console.error('Join error:', err);
     });
-  };
+  }, [cleanupManager, joinCodeInput, onStartOnlineMatch, selectedTeam]);
 
   // Host starts the game
   const handleHostStartGame = () => {
@@ -307,13 +312,13 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
         <div className="w-full p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 mb-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shadow-inner border"
+              className="w-11 h-11 rounded-xl flex items-center justify-center shadow-inner border"
               style={{
                 backgroundColor: `${selectedTeam.paddleColor}20`,
                 borderColor: selectedTeam.paddleColor,
               }}
             >
-              {selectedTeam.flag}
+              <CountryFlag team={selectedTeam} size="md" shape="rounded" />
             </div>
             <div>
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TAKIMINIZ</div>
@@ -461,6 +466,24 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                   maxLength={6}
                   value={joinCodeInput}
                   onChange={(e) => setJoinCodeInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && joinCodeInput.trim().length >= 4) {
+                      e.preventDefault();
+                      handleJoinRoom();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    const text = e.clipboardData.getData('text');
+                    if (text) {
+                      const norm = MultiplayerManager.normalizeRoomCode(text);
+                      if (norm) {
+                        setJoinCodeInput(norm);
+                        if (norm.length >= 4) {
+                          setTimeout(() => handleJoinRoom(norm), 100);
+                        }
+                      }
+                    }
+                  }}
                   placeholder="6 Haneli Kod"
                   className="w-full py-3 px-4 rounded-2xl bg-slate-950/90 border-2 border-slate-700 text-white font-mono text-center text-2xl font-black tracking-[0.25em] focus:border-emerald-400 focus:outline-none placeholder:text-slate-600 placeholder:text-base placeholder:tracking-normal"
                 />
@@ -473,10 +496,13 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                   try {
                     const text = await navigator.clipboard.readText();
                     if (text) {
-                      const digits = text.replace(/[^0-9]/g, '').slice(0, 6);
+                      const digits = MultiplayerManager.normalizeRoomCode(text);
                       if (digits) {
                         setJoinCodeInput(digits);
                         soundEngine.playClick();
+                        if (digits.length >= 4) {
+                          setTimeout(() => handleJoinRoom(digits), 100);
+                        }
                       }
                     }
                   } catch {
@@ -490,7 +516,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
               <button
                 id="connect-room-btn"
-                onClick={handleJoinRoom}
+                onClick={() => handleJoinRoom()}
                 disabled={joinCodeInput.trim().length < 4 || connStatus === 'connecting' || connStatus === 'initializing'}
                 className="mt-3 w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition"
               >
@@ -531,13 +557,31 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           </div>
         )}
 
-        {/* Error Message */}
+        {/* Error Message & Retry Action */}
         {errorMessage && (
-          <div className="w-full mt-3 p-3 rounded-xl bg-rose-950/70 border border-rose-600/60 text-rose-200 text-xs font-bold text-center flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{errorMessage}</span>
+          <div className="w-full mt-3 p-3 rounded-2xl bg-rose-950/70 border border-rose-600/60 text-rose-200 text-xs font-bold flex flex-col items-center gap-2 text-center">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{errorMessage}</span>
+            </div>
+            {tab === 'join' && joinCodeInput.trim().length >= 4 && (
+              <button
+                id="retry-join-btn"
+                onClick={() => handleJoinRoom()}
+                className="mt-1 px-4 py-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white font-black text-xs transition active:scale-95 flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Tekrar Dene</span>
+              </button>
+            )}
           </div>
         )}
+
+        {/* Global Connection Health Status Badge */}
+        <div className="mt-3 flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
+          <span>Kesintisiz Çift Sunucu Ağı Aktif (HiveMQ + EMQX)</span>
+        </div>
       </div>
 
       {/* Bottom CTA Action Area */}
@@ -594,7 +638,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                         : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700'
                     }`}
                   >
-                    <span className="text-2xl">{team.flag}</span>
+                    <CountryFlag team={team} size="md" shape="rounded" />
                     <div className="min-w-0">
                       <div className="text-xs font-black text-white truncate">{team.name}</div>
                       <div

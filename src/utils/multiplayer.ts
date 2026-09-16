@@ -1,5 +1,6 @@
 // High-Reliability Real-Time Multiplayer Manager for ÇEMBER
-// Dual-Layer Protocol: Cloud MQTT over Secure WebSockets (HiveMQ / EMQX) + Local BroadcastChannel
+// Multi-Hub Redundant Protocol: Concurrent Dual/Triple MQTT over Secure WebSockets (HiveMQ + EMQX + Mosquitto)
+// + Local BroadcastChannel + Continuous Lobby Heartbeat + Dynamic Message Deduplication.
 // Zero backend server required. 100% works across all networks, devices, mobile 4G/5G, Wi-Fi & tabs!
 
 import mqtt, { MqttClient } from 'mqtt';
@@ -102,20 +103,20 @@ export interface NetworkInputPayload {
 }
 
 export type NetMessage =
-  | { type: 'HOST_PRESENCE'; code: string; profile: PlayerProfile; targetScore?: number; senderId?: string }
-  | { type: 'HANDSHAKE'; profile: PlayerProfile; targetScore?: number; senderId?: string }
-  | { type: 'HANDSHAKE_ACK'; profile: PlayerProfile; targetScore?: number; senderId?: string }
-  | { type: 'LOBBY_READY'; isReady: boolean; senderId?: string }
-  | { type: 'START_GAME'; targetScore?: number; senderId?: string }
-  | { type: 'STATE'; data: NetworkGameStatePayload; senderId?: string }
-  | { type: 'INPUT'; data: NetworkInputPayload; senderId?: string }
-  | { type: 'PING'; sentAt: number; senderId?: string }
-  | { type: 'PONG'; sentAt: number; senderId?: string }
-  | { type: 'REMATCH_REQ'; senderId?: string }
-  | { type: 'REMATCH_ACCEPT'; senderId?: string }
-  | { type: 'LEAVE'; senderId?: string };
+  | { type: 'HOST_PRESENCE'; code: string; profile: PlayerProfile; targetScore?: number; senderId?: string; _mid?: string }
+  | { type: 'HANDSHAKE'; profile: PlayerProfile; targetScore?: number; senderId?: string; _mid?: string }
+  | { type: 'HANDSHAKE_ACK'; profile: PlayerProfile; targetScore?: number; senderId?: string; _mid?: string }
+  | { type: 'LOBBY_READY'; isReady: boolean; senderId?: string; _mid?: string }
+  | { type: 'START_GAME'; targetScore?: number; senderId?: string; _mid?: string }
+  | { type: 'STATE'; data: NetworkGameStatePayload; senderId?: string; _mid?: string }
+  | { type: 'INPUT'; data: NetworkInputPayload; senderId?: string; _mid?: string }
+  | { type: 'PING'; sentAt: number; senderId?: string; _mid?: string }
+  | { type: 'PONG'; sentAt: number; senderId?: string; _mid?: string }
+  | { type: 'REMATCH_REQ'; senderId?: string; _mid?: string }
+  | { type: 'REMATCH_ACCEPT'; senderId?: string; _mid?: string }
+  | { type: 'LEAVE'; senderId?: string; _mid?: string };
 
-// Public high-reliability MQTT WebSocket brokers with SSL
+// High-reliability public MQTT WebSocket brokers with SSL
 const PUBLIC_BROKERS = [
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://broker.emqx.io:8084/mqtt',
@@ -127,6 +128,7 @@ export class MultiplayerManager {
   public status: ConnectionStatus = 'idle';
   public errorMessage: string = '';
   public ping: number = 0;
+  public connectedBrokersCount: number = 0;
 
   public myProfile: PlayerProfile;
   public opponentProfile: PlayerProfile | null = null;
@@ -134,13 +136,13 @@ export class MultiplayerManager {
   public gameStarted: boolean = false;
 
   private clientId: string;
-  private mqttClient: MqttClient | null = null;
+  private msgSeq: number = 0;
+  private seenMsgIds: Set<string> = new Set();
+  private mqttClients: Map<string, MqttClient> = new Map();
   private broadcastChannel: BroadcastChannel | null = null;
-  private brokerIndex: number = 0;
 
   private pingInterval: number | null = null;
-  private handshakeInterval: number | null = null;
-  private presenceInterval: number | null = null;
+  private lobbyHeartbeatInterval: number | null = null;
   private lastStateSent: number = 0;
   private lastInputSent: number = 0;
 
@@ -155,20 +157,29 @@ export class MultiplayerManager {
 
   public setMyProfile(profile: Partial<PlayerProfile>) {
     this.myProfile = { ...this.myProfile, ...profile };
-    if (this.roomCode && this.status === 'connected') {
-      this.send({
-        type: 'HANDSHAKE_ACK',
-        profile: this.myProfile,
-        targetScore: this.targetScore,
-      });
+    if (this.roomCode && (this.status === 'connected' || this.status === 'waiting_for_peer')) {
+      if (this.role === 'host') {
+        this.send({
+          type: 'HOST_PRESENCE',
+          code: this.roomCode,
+          profile: this.myProfile,
+          targetScore: this.targetScore,
+        });
+      } else {
+        this.send({
+          type: 'HANDSHAKE',
+          profile: this.myProfile,
+        });
+      }
     }
   }
 
   public setTargetScore(target: number) {
     this.targetScore = target;
-    if (this.roomCode && this.status === 'connected') {
+    if (this.roomCode && this.role === 'host') {
       this.send({
-        type: 'HANDSHAKE_ACK',
+        type: 'HOST_PRESENCE',
+        code: this.roomCode,
         profile: this.myProfile,
         targetScore: this.targetScore,
       });
@@ -185,12 +196,19 @@ export class MultiplayerManager {
   }
 
   public static normalizeRoomCode(code: string): string {
-    return String(code || '').trim().replace(/[^0-9]/g, '').slice(0, 6);
+    // Handles plain 6 digits, URLs like '?room=123456', hashes, spaces, etc.
+    if (!code) return '';
+    const cleanStr = String(code).trim();
+    const urlMatch = cleanStr.match(/[?&]room=([0-9]{4,6})/i);
+    if (urlMatch && urlMatch[1]) {
+      return urlMatch[1].slice(0, 6);
+    }
+    return cleanStr.replace(/[^0-9]/g, '').slice(0, 6);
   }
 
-  // Topic names based on 6-digit room code
+  // Topic names based on 6-digit room code with v4 namespace
   private getTopicPrefix(code: string): string {
-    return `cember_arena_pvp_v3/${code}`;
+    return `cember_arena_pvp_v4/${code}`;
   }
 
   private getHostToGuestTopic(code: string): string {
@@ -205,84 +223,91 @@ export class MultiplayerManager {
     return `${this.getTopicPrefix(code)}/lobby`;
   }
 
-  // Connect to MQTT Broker with automatic fallback
-  private connectToBroker(code: string): Promise<MqttClient> {
+  // Multi-Hub Redundant Mesh: Connect to all high-availability brokers in parallel
+  // Resolves as soon as at least ONE broker is connected and topic subscriptions are confirmed!
+  private connectToBrokerMesh(code: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const brokerUrl = PUBLIC_BROKERS[this.brokerIndex % PUBLIC_BROKERS.length];
-      const client = mqtt.connect(brokerUrl, {
-        clientId: this.clientId,
-        clean: true,
-        connectTimeout: 8000,
-        reconnectPeriod: 2500,
-        keepalive: 15,
-      });
+      let hasResolved = false;
+      let failedBrokers = 0;
+      const totalBrokers = PUBLIC_BROKERS.length;
 
-      let resolved = false;
-
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          client.end(true);
-          // Try next broker
-          this.brokerIndex++;
-          const nextUrl = PUBLIC_BROKERS[this.brokerIndex % PUBLIC_BROKERS.length];
-          const fallbackClient = mqtt.connect(nextUrl, {
-            clientId: this.clientId,
-            clean: true,
-            connectTimeout: 8000,
-            reconnectPeriod: 2500,
-            keepalive: 15,
-          });
-          fallbackClient.on('connect', () => {
-            this.mqttClient = fallbackClient;
-            this.setupMqttSubscriptions(fallbackClient, code);
-            resolve(fallbackClient);
-          });
-          fallbackClient.on('error', (err) => {
-            console.warn('Fallback MQTT error:', err);
-          });
-        }
-      }, 7000);
-
-      client.on('connect', () => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          this.mqttClient = client;
-          this.setupMqttSubscriptions(client, code);
-          resolve(client);
-        }
-      });
-
-      client.on('message', (_topic, messageBuffer) => {
-        try {
-          const str = messageBuffer.toString();
-          if (!str) return;
-          const msg = JSON.parse(str) as NetMessage;
-          if (msg && msg.senderId !== this.clientId) {
-            this.handleIncomingMessage(msg);
+      const connectionTimeout = window.setTimeout(() => {
+        if (!hasResolved) {
+          if (this.connectedBrokersCount > 0) {
+            hasResolved = true;
+            resolve();
+          } else {
+            reject(new Error('Broker connection timeout'));
           }
+        }
+      }, 7500);
+
+      PUBLIC_BROKERS.forEach((brokerUrl) => {
+        try {
+          const client = mqtt.connect(brokerUrl, {
+            clientId: `${this.clientId}_${Math.random().toString(36).substring(2, 6)}`,
+            clean: true,
+            connectTimeout: 6000,
+            reconnectPeriod: 2000,
+            keepalive: 20,
+          });
+
+          this.mqttClients.set(brokerUrl, client);
+
+          client.on('connect', () => {
+            this.connectedBrokersCount++;
+            // Subscribe to room topics and wait for confirmation
+            const topics = [
+              `${this.getTopicPrefix(code)}/#`,
+              this.getLobbyTopic(code),
+              this.getHostToGuestTopic(code),
+              this.getGuestToHostTopic(code),
+            ];
+
+            client.subscribe(topics, { qos: 0 }, (err) => {
+              if (err) {
+                console.warn(`[MQTT] Subscription warning on ${brokerUrl}:`, err);
+              } else {
+                if (!hasResolved) {
+                  hasResolved = true;
+                  clearTimeout(connectionTimeout);
+                  resolve();
+                }
+              }
+            });
+          });
+
+          client.on('message', (_topic, messageBuffer) => {
+            try {
+              const str = messageBuffer.toString();
+              if (!str) return;
+              const msg = JSON.parse(str) as NetMessage;
+              if (msg && msg.senderId !== this.clientId) {
+                this.handleIncomingMessage(msg);
+              }
+            } catch (err) {
+              console.warn('[MQTT] Message parse error:', err);
+            }
+          });
+
+          client.on('error', (err) => {
+            console.warn(`[MQTT] Notice on ${brokerUrl}:`, err.message);
+          });
+
+          client.on('close', () => {
+            if (this.mqttClients.has(brokerUrl)) {
+              this.connectedBrokersCount = Math.max(0, this.connectedBrokersCount - 1);
+            }
+          });
         } catch (err) {
-          console.warn('MQTT parse warning:', err);
+          console.warn(`[MQTT] Init error for ${brokerUrl}:`, err);
+          failedBrokers++;
+          if (failedBrokers >= totalBrokers && !hasResolved) {
+            clearTimeout(connectionTimeout);
+            reject(err);
+          }
         }
       });
-
-      client.on('error', (err) => {
-        console.warn('MQTT Connection notice:', err.message);
-      });
-    });
-  }
-
-  private setupMqttSubscriptions(client: MqttClient, code: string) {
-    const topics = [
-      `${this.getTopicPrefix(code)}/#`,
-      this.getLobbyTopic(code),
-      this.getHostToGuestTopic(code),
-      this.getGuestToHostTopic(code),
-    ];
-    client.subscribe(topics, { qos: 0 }, (err) => {
-      if (err) {
-        console.warn('Subscription warning:', err);
-      }
     });
   }
 
@@ -293,7 +318,7 @@ export class MultiplayerManager {
         if (this.broadcastChannel) {
           this.broadcastChannel.close();
         }
-        this.broadcastChannel = new BroadcastChannel(`cember_arena_bc_${code}`);
+        this.broadcastChannel = new BroadcastChannel(`cember_arena_bc_v4_${code}`);
         this.broadcastChannel.onmessage = (event) => {
           const msg = event.data as NetMessage;
           if (msg && msg.senderId !== this.clientId) {
@@ -319,38 +344,42 @@ export class MultiplayerManager {
 
     try {
       this.setupBroadcastChannel(cleanCode);
-      await this.connectToBroker(cleanCode);
+      await this.connectToBrokerMesh(cleanCode);
 
       this.setStatus('waiting_for_peer');
 
-      // Periodically announce presence so joining guests immediately see host
-      if (this.presenceInterval) clearInterval(this.presenceInterval);
-      this.presenceInterval = window.setInterval(() => {
-        if (this.status === 'waiting_for_peer' && this.roomCode === cleanCode) {
+      // Continuous Lobby Heartbeat:
+      // Host continuously broadcasts presence every 800ms while in the lobby
+      // so any guest connecting at any time immediately detects the host!
+      if (this.lobbyHeartbeatInterval) clearInterval(this.lobbyHeartbeatInterval);
+      this.lobbyHeartbeatInterval = window.setInterval(() => {
+        if (!this.gameStarted && this.roomCode === cleanCode) {
           this.send({
             type: 'HOST_PRESENCE',
             code: cleanCode,
             profile: this.myProfile,
             targetScore: this.targetScore,
           });
-        } else if (this.status === 'connected' && this.presenceInterval) {
-          clearInterval(this.presenceInterval);
-          this.presenceInterval = null;
         }
-      }, 1200);
+      }, 800);
 
-      // Send immediate first presence announcement
-      this.send({
-        type: 'HOST_PRESENCE',
-        code: cleanCode,
-        profile: this.myProfile,
-        targetScore: this.targetScore,
-      });
+      // Send immediate initial presence announcements
+      const announce = () => {
+        this.send({
+          type: 'HOST_PRESENCE',
+          code: cleanCode,
+          profile: this.myProfile,
+          targetScore: this.targetScore,
+        });
+      };
+      announce();
+      setTimeout(announce, 150);
+      setTimeout(announce, 450);
 
       return cleanCode;
     } catch (err: any) {
       console.error('Failed to create room:', err);
-      this.errorMessage = 'Oda bağlantısı kurulamadı. Lütfen tekrar deneyin.';
+      this.errorMessage = 'Sunucu bağlantısı kurulamadı. Lütfen internetinizi kontrol edip tekrar deneyin.';
       this.setStatus('error');
       throw err;
     }
@@ -368,15 +397,16 @@ export class MultiplayerManager {
 
     try {
       this.setupBroadcastChannel(cleanCode);
-      await this.connectToBroker(cleanCode);
+      await this.connectToBrokerMesh(cleanCode);
 
-      // Start Handshake Loop: Send handshake until connected
+      // Continuous Lobby Handshake Loop:
+      // Guest continuously announces its presence/handshake until game starts
       let attempts = 0;
       const sendHandshake = () => {
-        if ((this.status as ConnectionStatus) === 'connected') {
-          if (this.handshakeInterval) {
-            clearInterval(this.handshakeInterval);
-            this.handshakeInterval = null;
+        if (this.gameStarted) {
+          if (this.lobbyHeartbeatInterval) {
+            clearInterval(this.lobbyHeartbeatInterval);
+            this.lobbyHeartbeatInterval = null;
           }
           return;
         }
@@ -387,10 +417,11 @@ export class MultiplayerManager {
           profile: this.myProfile,
         });
 
-        if (attempts > 30 && (this.status as ConnectionStatus) !== 'connected') {
-          if (this.handshakeInterval) {
-            clearInterval(this.handshakeInterval);
-            this.handshakeInterval = null;
+        // Generous timeout: 45 attempts * 750ms = ~34 seconds before giving up
+        if (attempts > 45 && (this.status as ConnectionStatus) !== 'connected') {
+          if (this.lobbyHeartbeatInterval) {
+            clearInterval(this.lobbyHeartbeatInterval);
+            this.lobbyHeartbeatInterval = null;
           }
           this.errorMessage = 'Odaya bağlanılamadı. Kurucunun ekranında oda numarasının açık olduğundan emin olun.';
           this.setStatus('error');
@@ -398,11 +429,14 @@ export class MultiplayerManager {
       };
 
       sendHandshake();
-      if (this.handshakeInterval) clearInterval(this.handshakeInterval);
-      this.handshakeInterval = window.setInterval(sendHandshake, 600);
+      setTimeout(sendHandshake, 200);
+      setTimeout(sendHandshake, 500);
+
+      if (this.lobbyHeartbeatInterval) clearInterval(this.lobbyHeartbeatInterval);
+      this.lobbyHeartbeatInterval = window.setInterval(sendHandshake, 750);
     } catch (err: any) {
       console.error('Failed to join room:', err);
-      this.errorMessage = 'Odaya bağlanılamadı.';
+      this.errorMessage = 'Odaya bağlanılamadı. Lütfen oda kodunu ve internetinizi kontrol edin.';
       this.setStatus('error');
       throw err;
     }
@@ -411,25 +445,36 @@ export class MultiplayerManager {
   private handleIncomingMessage(msg: NetMessage) {
     if (!msg || !msg.type) return;
 
+    // Deduplication check
+    if (msg._mid) {
+      if (this.seenMsgIds.has(msg._mid)) return;
+      this.seenMsgIds.add(msg._mid);
+      if (this.seenMsgIds.size > 600) {
+        const first = this.seenMsgIds.values().next().value;
+        if (first) this.seenMsgIds.delete(first);
+      }
+    }
+
     switch (msg.type) {
       case 'HOST_PRESENCE': {
-        if (this.role === 'guest' && (this.status as ConnectionStatus) !== 'connected') {
+        if (this.role === 'guest') {
+          const wasNotConnected = (this.status as ConnectionStatus) !== 'connected';
           this.opponentProfile = msg.profile;
           if (msg.targetScore) {
             this.targetScore = msg.targetScore;
           }
-          if (this.handshakeInterval) {
-            clearInterval(this.handshakeInterval);
-            this.handshakeInterval = null;
+          this.setStatus('connected');
+
+          if (wasNotConnected) {
+            this.notify('handshake_received', msg.profile);
+            this.startPingLoop();
           }
-          // Respond with handshake
+
+          // Reply with immediate handshake
           this.send({
             type: 'HANDSHAKE',
             profile: this.myProfile,
           });
-          this.setStatus('connected');
-          this.notify('handshake_received', msg.profile);
-          this.startPingLoop();
         }
         break;
       }
@@ -440,11 +485,8 @@ export class MultiplayerManager {
         if (msg.targetScore && this.role === 'guest') {
           this.targetScore = msg.targetScore;
         }
-        if (this.presenceInterval) {
-          clearInterval(this.presenceInterval);
-          this.presenceInterval = null;
-        }
-        // If I am host, reply with ACK and my profile
+
+        // If I am host, reply with ACK and my current profile
         if (this.role === 'host') {
           this.send({
             type: 'HANDSHAKE_ACK',
@@ -452,11 +494,12 @@ export class MultiplayerManager {
             targetScore: this.targetScore,
           });
         }
+
         this.setStatus('connected');
         if (wasNotConnected) {
           this.notify('handshake_received', msg.profile);
+          this.startPingLoop();
         }
-        this.startPingLoop();
         break;
       }
 
@@ -466,19 +509,11 @@ export class MultiplayerManager {
         if (msg.targetScore) {
           this.targetScore = msg.targetScore;
         }
-        if (this.handshakeInterval) {
-          clearInterval(this.handshakeInterval);
-          this.handshakeInterval = null;
-        }
-        if (this.presenceInterval) {
-          clearInterval(this.presenceInterval);
-          this.presenceInterval = null;
-        }
         this.setStatus('connected');
         if (wasNotConnected) {
           this.notify('handshake_received', msg.profile);
+          this.startPingLoop();
         }
-        this.startPingLoop();
         break;
       }
 
@@ -492,6 +527,10 @@ export class MultiplayerManager {
 
       case 'START_GAME': {
         this.gameStarted = true;
+        if (this.lobbyHeartbeatInterval) {
+          clearInterval(this.lobbyHeartbeatInterval);
+          this.lobbyHeartbeatInterval = null;
+        }
         if (msg.targetScore) {
           this.targetScore = msg.targetScore;
         }
@@ -503,6 +542,10 @@ export class MultiplayerManager {
       case 'STATE': {
         if (this.role === 'guest' && !this.gameStarted) {
           this.gameStarted = true;
+          if (this.lobbyHeartbeatInterval) {
+            clearInterval(this.lobbyHeartbeatInterval);
+            this.lobbyHeartbeatInterval = null;
+          }
           this.notify('game_started');
           this.notify('match_start');
         }
@@ -534,6 +577,10 @@ export class MultiplayerManager {
 
       case 'REMATCH_ACCEPT': {
         this.gameStarted = true;
+        if (this.lobbyHeartbeatInterval) {
+          clearInterval(this.lobbyHeartbeatInterval);
+          this.lobbyHeartbeatInterval = null;
+        }
         this.notify('rematch_accepted');
         this.notify('game_started');
         this.notify('match_start');
@@ -541,19 +588,27 @@ export class MultiplayerManager {
       }
 
       case 'LEAVE': {
-        this.setStatus('disconnected');
+        if (!this.gameStarted) {
+          this.opponentProfile = null;
+          this.setStatus(this.role === 'host' ? 'waiting_for_peer' : 'disconnected');
+          this.notify('peer_left');
+        } else {
+          this.setStatus('disconnected');
+          this.notify('peer_left');
+        }
         break;
       }
     }
   }
 
-  // Dual-dispatch: BroadcastChannel (local 0ms) + MQTT (global cloud)
+  // Dual-dispatch: BroadcastChannel (local 0ms fast-path) + Multi-Hub MQTT Brokers
   public send(msg: NetMessage) {
     if (!this.roomCode) return;
-    const enrichedMsg: NetMessage = { ...msg, senderId: this.clientId };
+    const msgId = `${this.clientId}_${++this.msgSeq}`;
+    const enrichedMsg: NetMessage = { ...msg, senderId: this.clientId, _mid: msgId };
     const serialized = JSON.stringify(enrichedMsg);
 
-    // 1. BroadcastChannel (local tabs fast path)
+    // 1. BroadcastChannel (local tabs instant 0ms fast path)
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage(enrichedMsg);
@@ -562,20 +617,23 @@ export class MultiplayerManager {
       }
     }
 
-    // 2. MQTT WebSocket Broker (cross-device global path)
-    if (this.mqttClient && this.mqttClient.connected) {
-      try {
-        let topic = this.getLobbyTopic(this.roomCode);
-        if (msg.type === 'STATE') {
-          topic = this.getHostToGuestTopic(this.roomCode);
-        } else if (msg.type === 'INPUT') {
-          topic = this.getGuestToHostTopic(this.roomCode);
-        }
-        this.mqttClient.publish(topic, serialized, { qos: 0 });
-      } catch {
-        // ignore
-      }
+    // 2. Multi-Hub MQTT Broker Mesh (cross-device global paths)
+    let topic = this.getLobbyTopic(this.roomCode);
+    if (msg.type === 'STATE') {
+      topic = this.getHostToGuestTopic(this.roomCode);
+    } else if (msg.type === 'INPUT') {
+      topic = this.getGuestToHostTopic(this.roomCode);
     }
+
+    this.mqttClients.forEach((client) => {
+      if (client && client.connected) {
+        try {
+          client.publish(topic, serialized, { qos: 0 });
+        } catch {
+          // ignore
+        }
+      }
+    });
   }
 
   // Fast broadcast game state (Host -> Guest) with ultra-low latency 60FPS rate
@@ -588,10 +646,10 @@ export class MultiplayerManager {
           this.send({ type: 'STATE', data: state });
         };
         sendGameOver();
-        setTimeout(sendGameOver, 40);
-        setTimeout(sendGameOver, 100);
-        setTimeout(sendGameOver, 220);
-        setTimeout(sendGameOver, 450);
+        setTimeout(sendGameOver, 30);
+        setTimeout(sendGameOver, 80);
+        setTimeout(sendGameOver, 180);
+        setTimeout(sendGameOver, 380);
         return;
       }
 
@@ -617,15 +675,19 @@ export class MultiplayerManager {
   public startGame() {
     if (this.role === 'host') {
       this.gameStarted = true;
-      // Burst START_GAME to guarantee arrival
+      if (this.lobbyHeartbeatInterval) {
+        clearInterval(this.lobbyHeartbeatInterval);
+        this.lobbyHeartbeatInterval = null;
+      }
+      // Guaranteed burst START_GAME to ensure immediate match launch
       const sendStart = () => {
         this.send({ type: 'START_GAME', targetScore: this.targetScore });
       };
       sendStart();
-      setTimeout(sendStart, 60);
-      setTimeout(sendStart, 140);
-      setTimeout(sendStart, 260);
-      setTimeout(sendStart, 480);
+      setTimeout(sendStart, 40);
+      setTimeout(sendStart, 100);
+      setTimeout(sendStart, 220);
+      setTimeout(sendStart, 450);
 
       this.notify('game_started');
       this.notify('match_start');
@@ -642,8 +704,14 @@ export class MultiplayerManager {
 
   public acceptRematch() {
     this.gameStarted = true;
+    if (this.lobbyHeartbeatInterval) {
+      clearInterval(this.lobbyHeartbeatInterval);
+      this.lobbyHeartbeatInterval = null;
+    }
     this.send({ type: 'REMATCH_ACCEPT' });
     this.notify('rematch_accepted');
+    this.notify('game_started');
+    this.notify('match_start');
   }
 
   private startPingLoop() {
@@ -652,7 +720,7 @@ export class MultiplayerManager {
       if (this.roomCode && this.status === 'connected') {
         this.send({ type: 'PING', sentAt: Date.now() });
       }
-    }, 2000);
+    }, 1500);
   }
 
   private setStatus(status: ConnectionStatus) {
@@ -685,13 +753,9 @@ export class MultiplayerManager {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
-    if (this.handshakeInterval) {
-      clearInterval(this.handshakeInterval);
-      this.handshakeInterval = null;
-    }
-    if (this.presenceInterval) {
-      clearInterval(this.presenceInterval);
-      this.presenceInterval = null;
+    if (this.lobbyHeartbeatInterval) {
+      clearInterval(this.lobbyHeartbeatInterval);
+      this.lobbyHeartbeatInterval = null;
     }
     if (this.roomCode && this.status === 'connected') {
       this.send({ type: 'LEAVE' });
@@ -700,14 +764,15 @@ export class MultiplayerManager {
       this.broadcastChannel.close();
       this.broadcastChannel = null;
     }
-    if (this.mqttClient) {
+    this.mqttClients.forEach((client) => {
       try {
-        this.mqttClient.end(true);
+        client.end(true);
       } catch {
         // ignore
       }
-      this.mqttClient = null;
-    }
+    });
+    this.mqttClients.clear();
+    this.connectedBrokersCount = 0;
     this.role = null;
     this.opponentProfile = null;
     this.status = 'idle';

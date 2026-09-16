@@ -3,6 +3,7 @@ import { RotateCcw, Home, Trophy, Flame, Sparkles, Clock, Target, Zap, ChevronRi
 import { GameScore, GameStats, CountryTeam, TournamentMatch, GameDifficulty } from '../types';
 import { DifficultyBadge } from '../adventureData';
 import { ShopModal } from './ShopModal';
+import { CountryFlag } from './CountryFlag';
 
 export const DIFFICULTY_NAMES: Record<
   GameDifficulty,
@@ -179,9 +180,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         {/* Tournament mode subtitle */}
         {isTournamentMode && (
           <div className="flex items-center gap-2 my-2 text-xs font-bold text-amber-300">
-            <span>{playerTeam?.flag} {playerTeam?.name}</span>
+            <span className="flex items-center gap-1.5"><CountryFlag team={playerTeam} size="xs" shape="rounded" /> {playerTeam?.name}</span>
             <span className="text-slate-500">vs</span>
-            <span>{opponentTeam?.flag} {opponentTeam?.name}</span>
+            <span className="flex items-center gap-1.5"><CountryFlag team={opponentTeam} size="xs" shape="rounded" /> {opponentTeam?.name}</span>
           </div>
         )}
 
@@ -221,10 +222,17 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         <div className="w-full py-3.5 px-6 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-around mb-4 shadow-inner">
           <div className="flex flex-col items-center">
             <span
-              className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1"
+              className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5"
               style={{ color: playerTeam?.paddleColor || '#22d3ee' }}
             >
-              {playerTeam ? `${playerTeam.flag} ${playerTeam.name}` : 'OYUNCU'}
+              {playerTeam ? (
+                <>
+                  <CountryFlag team={playerTeam} size="xs" shape="rounded" />
+                  <span>{playerTeam.name}</span>
+                </>
+              ) : (
+                'OYUNCU'
+              )}
             </span>
             <span
               className="text-4xl font-black text-white"
@@ -236,10 +244,17 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <div className="text-xl font-black text-slate-600">:</div>
           <div className="flex flex-col items-center">
             <span
-              className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1"
+              className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5"
               style={{ color: opponentTeam?.paddleColor || '#fb7185' }}
             >
-              {opponentTeam ? `${opponentTeam.flag} ${opponentTeam.name}` : 'RAKİP'}
+              {opponentTeam ? (
+                <>
+                  <CountryFlag team={opponentTeam} size="xs" shape="rounded" />
+                  <span>{opponentTeam.name}</span>
+                </>
+              ) : (
+                'RAKİP'
+              )}
             </span>
             <span
               className="text-4xl font-black text-white"

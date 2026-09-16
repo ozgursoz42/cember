@@ -218,11 +218,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         opponentPaddleRef.current.glowColor = '#fb7185';
       }
     }
-  }, [playerTeam, opponentTeam, stage, isTournamentMode]);
+    lastBallLaunchDirRef.current = null;
+    hasInitializedMatchRef.current = false;
+  }, [playerTeam, opponentTeam, stage, isTournamentMode, difficulty]);
 
   // Entities refs
   const ballRef = useRef<Ball>({
-    x: 180,
+    x: 22,
     y: 320,
     vx: 0,
     vy: 0,
@@ -337,6 +339,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const slowMoTimerRef = useRef<number>(0);
   const powerUpTimerRef = useRef<number>(5.0); // Spawns first power-up reliably 5s after game starts!
   const launcherFlashRef = useRef<number>(0);
+  const ballLauncherFlashRef = useRef<number>(0);
+  const lastBallLaunchDirRef = useRef<'up' | 'down' | null>(null);
+  const hasInitializedMatchRef = useRef<boolean>(false);
   const powerUpToastRef = useRef<{ title: string; subtitle: string; color: string; icon: string; timer: number } | null>(null);
   const lastReportedStatusKeyRef = useRef<string>('');
   const hasTriggeredGameOverRef = useRef<boolean>(false);
@@ -409,12 +414,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     powerUpTimerRef.current = 5.0 + Math.random() * 3.5;
   };
 
-  // Reset ball to center and serve
-  const resetBall = useCallback((towardPlayer: boolean = true) => {
+  // Reset ball and launch from the left-side gate (directly opposite the power-up launcher)
+  // "Oyunun başlangıcında ilk topun çıkış yeri ve sonrasında gol sonrasında çıkan topların çıkış noktası güç toplarının tam karşısına denk gelen sol kenarda aynı kapı görüntüsüyle olan yerden çıksın, ilk top random olarak yukarı ya da aşağıya gitsin. Ondan sonra gol vs olduktan sonraki toplar sırasıyla bir önce yukarı gittiyse aşağı, bir önceki sefer aşağıya gittiyse yukarı yönlü hareket halinde oyun başlangıcı olsun. Bunu oyunun tüm modlarına uygula."
+  const resetBall = useCallback((_towardPlayer?: boolean) => {
     const { width, height } = gameStateRef.current;
     const ball = ballRef.current;
-    ball.x = width / 2;
-    ball.y = height / 2;
+
+    // Determine launch direction:
+    // First ball of the match: randomly UP or DOWN.
+    // Subsequent balls after goal: alternate direction (if last was UP -> DOWN; if last was DOWN -> UP)
+    let launchDir: 'up' | 'down';
+    if (lastBallLaunchDirRef.current === null) {
+      launchDir = Math.random() < 0.5 ? 'up' : 'down';
+    } else {
+      launchDir = lastBallLaunchDirRef.current === 'up' ? 'down' : 'up';
+    }
+    lastBallLaunchDirRef.current = launchDir;
+
+    // Spawn point: left gate directly opposite the power-up launcher
+    const launcherY = height > 0 ? height / 2 : 320;
+    ball.x = 22;
+    ball.y = launcherY;
     ball.trail = [];
     ball.lastHitter = 'none';
     ball.deflectedBySensor = false;
@@ -451,14 +471,22 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ball.speed = ball.isSlowMo ? diffBase * 0.48 : diffBase;
     ball.maxSpeed = 920;
 
-    // Launch with slight random angle
-    const angleOffset = (Math.random() * 0.5 - 0.25) * Math.PI;
-    const dirY = towardPlayer ? 1 : -1;
-    ball.vx = Math.sin(angleOffset) * ball.speed;
-    ball.vy = Math.cos(angleOffset) * dirY * ball.speed;
+    // Dynamic launch angle towards the court:
+    // Moves rightwards into arena (vx > 0) with diagonal incline heading up (vy < 0) or down (vy > 0)
+    const launchAngleDeg = 36 + Math.random() * 8; // ~36° - 44°
+    const launchAngleRad = (launchAngleDeg * Math.PI) / 180;
+    ball.vx = Math.cos(launchAngleRad) * ball.speed;
+    const dirSign = launchDir === 'up' ? -1 : 1;
+    ball.vy = dirSign * Math.sin(launchAngleRad) * ball.speed;
 
     // Reset multi balls back to single ball
     ballsRef.current = [ball];
+
+    // Trigger visual launch flash and particles from left gate
+    ballLauncherFlashRef.current = 1.0;
+    spawnHitParticles(14, launcherY, '#38bdf8', 18, 1.5, 'spark');
+    spawnShockwave(14, launcherY, '#38bdf8', 55);
+    soundEngine.playPaddleHit(launchDir === 'down', 0);
   }, [difficulty, stage]);
 
   // Adjust sensor movement type based on total points or round progression
@@ -1188,7 +1216,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       opponentPaddleRef.current.targetY = 85;
 
       updateSensorDifficulty();
-      resetBall(true);
+      if (!hasInitializedMatchRef.current && w > 0 && h > 0) {
+        hasInitializedMatchRef.current = true;
+        resetBall();
+      }
 
       // Apply single-match shop boosters ONCE canvas dimensions (w, h) are non-zero and ready
       if (!boostersAppliedRef.current && w > 0 && h > 0) {
@@ -1627,6 +1658,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (launcherFlashRef.current > 0) {
           launcherFlashRef.current = Math.max(0, launcherFlashRef.current - dt * 3.5);
         }
+        if (ballLauncherFlashRef.current > 0) {
+          ballLauncherFlashRef.current = Math.max(0, ballLauncherFlashRef.current - dt * 3.5);
+        }
 
         // 2. Handle round reset timer
         if (state.isRoundResetting) {
@@ -1634,7 +1668,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           if (state.resetTimer <= 0) {
             state.isRoundResetting = false;
             state.roundBanner = '';
-            resetBall(ballRef.current.lastHitter !== 'player');
+            resetBall();
           }
         } else {
           // --- CIRCLE SENSOR TIME-BASED DIVISION MECHANIC ---
@@ -3155,9 +3189,34 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.stroke();
       ctx.setLineDash([]);
 
+      const launcherY = h / 2;
+
+      // Left-Center Match Ball Launcher Port (exact counterpart of right power-up launcher)
+      // "güç toplarının tam karşısına denk gelen sol kenarda aynı kapı görüntüsüyle olan yerden çıksın"
+      const ballFlashVal = ballLauncherFlashRef.current;
+      ctx.save();
+      ctx.shadowColor = ballFlashVal > 0.05 ? '#38bdf8' : '#64748b';
+      ctx.shadowBlur = ballFlashVal > 0.05 ? 18 * ballFlashVal : 6;
+
+      // Outer gate notch
+      ctx.fillStyle = ballFlashVal > 0.05 ? 'rgba(56, 189, 248, 0.45)' : 'rgba(56, 189, 248, 0.18)';
+      ctx.strokeStyle = ballFlashVal > 0.05 ? '#38bdf8' : 'rgba(56, 189, 248, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(6, launcherY - 26, 8, 52, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Directional launch indicator (towards right arena)
+      ctx.fillStyle = ballFlashVal > 0.05 ? '#ffffff' : '#38bdf8';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▶', 10, launcherY);
+      ctx.restore();
+
       // Right-Center Power-Up Launcher Port
       // "oyuna oyun alanının sağ orta tarafından fırlatılan, güç öğeleri ekle"
-      const launcherY = h / 2;
       const flashVal = launcherFlashRef.current;
       ctx.save();
       ctx.shadowColor = flashVal > 0.05 ? '#10b981' : '#38bdf8';
